@@ -17,6 +17,7 @@ MRuby::CrossBuild.new("esp32") do |conf|
   conf.cc.defines << "MRBC_USE_FLOAT=2"
   conf.cc.defines << "MRBC_CONVERT_CRLF=1"
   conf.cc.defines << "USE_FAT_FLASH_DISK"
+  conf.cc.defines << "USE_FAT_SD_DISK"
   conf.cc.defines << "ESP32_PLATFORM"
   conf.cc.defines << "NDEBUG"
 

@@ -43,6 +43,7 @@ idf_component_register(
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-machine/ports/common/machine.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-io-console/ports/esp32/io-console.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-filesystem-fat/ports/esp32/flash_disk.c
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-filesystem-fat/ports/esp32/sd_disk.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-env/ports/esp32/env.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-gpio/ports/esp32/gpio.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-adc/ports/esp32/adc.c
@@ -73,6 +74,8 @@ idf_component_register(
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-mbedtls/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-mbedtls/lib/mbedtls/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-filesystem-fat/ports/esp32
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-filesystem-fat/include
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-filesystem-fat/src/hal
     ${COMPONENT_DIR}/picoruby/mrbgems/mruby-compiler2/include
     ${COMPONENT_DIR}/picoruby/mrbgems/mruby-compiler2/lib/prism/include
     ${ADDITIONAL_INCLUDE_DIRS}
@@ -80,6 +83,7 @@ idf_component_register(
     esp_driver_gpio
     esp_driver_uart
     esp_driver_spi
+    esp_driver_sdmmc
     esp_driver_ledc
     esp_driver_rmt
     esp_driver_i2c
@@ -95,6 +99,7 @@ add_definitions(
   ${ADDITIONAL_DEFINITIONS}
   -DMRBC_CONVERT_CRLF=1
   -DUSE_FAT_FLASH_DISK
+  -DUSE_FAT_SD_DISK
   -DESP32_PLATFORM
   -DNDEBUG
 )
@@ -129,6 +134,46 @@ add_custom_target(
   ${CUSTOM_TARGET_NAME} DEPENDS ${LIBMRUBY_FILE}
 )
 add_dependencies(${COMPONENT_LIB} ${CUSTOM_TARGET_NAME})
+
+# Generate board_config.rb from template based on Kconfig settings
+if(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3)
+  set(BOARD_NAME "M5Stack CoreS3 SE")
+  set(SD_MODE "spi")
+  # SPI pins for M5Stack
+  set(SD_SCK_PIN 36)
+  set(SD_MISO_PIN 35)
+  set(SD_MOSI_PIN 37)
+  set(SD_CS_PIN 4)
+  # SDMMC pins (not used for M5Stack, set to -1)
+  set(SD_CLK_PIN -1)
+  set(SD_CMD_PIN -1)
+  set(SD_D0_PIN -1)
+else()
+  # Default to Freenove - SDMMC mode (requires PSRAM disabled to avoid GPIO conflict)
+  set(BOARD_NAME "Freenove ESP32-S3")
+  set(SD_MODE "sdmmc")
+  # SDMMC pins for Freenove (from official documentation)
+  set(SD_CLK_PIN 39)
+  set(SD_CMD_PIN 38)
+  set(SD_D0_PIN 40)
+  # SPI pins (not used for Freenove, set to -1)
+  set(SD_SCK_PIN -1)
+  set(SD_MISO_PIN -1)
+  set(SD_MOSI_PIN -1)
+  set(SD_CS_PIN -1)
+endif()
+
+configure_file(
+  ${COMPONENT_DIR}/mrblib/board_config.rb.in
+  ${COMPONENT_DIR}/mrblib/board_config.rb
+  @ONLY
+)
+
+# Concatenate board_config.rb and main_task_base.rb into main_task.rb
+# This ensures BoardConfig module is defined before main_task uses it
+file(READ ${COMPONENT_DIR}/mrblib/board_config.rb BOARD_CONFIG_CONTENT)
+file(READ ${COMPONENT_DIR}/mrblib/main_task_base.rb MAIN_TASK_CONTENT)
+file(WRITE ${COMPONENT_DIR}/mrblib/main_task.rb "${BOARD_CONFIG_CONTENT}\n${MAIN_TASK_CONTENT}")
 
 # Compile Ruby files
 set(RUBY_FILES main_task)
