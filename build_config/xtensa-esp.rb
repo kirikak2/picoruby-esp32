@@ -46,4 +46,8 @@ MRuby::CrossBuild.new("esp32") do |conf|
   conf.gem core: 'picoruby-socket'
   conf.gem core: 'picoruby-mqtt'
   conf.gem core: 'picoruby-adafruit_sk6812'
+
+  # MIDI
+  conf.gem core: 'picoruby-usb_midi'
+  conf.gem core: 'picoruby-midi'
 end

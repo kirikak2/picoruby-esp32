@@ -66,6 +66,8 @@ idf_component_register(
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-socket/ports/esp32/udp_socket.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-i2c/ports/esp32/i2c.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-uart/ports/esp32/uart.c
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi/ports/esp32/usb_midi.c
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-midi/ports/esp32/midi.c
   INCLUDE_DIRS
     ${COMPONENT_DIR}
     ${COMPONENT_DIR}/picoruby/include
@@ -78,6 +80,8 @@ idf_component_register(
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-filesystem-fat/src/hal
     ${COMPONENT_DIR}/picoruby/mrbgems/mruby-compiler2/include
     ${COMPONENT_DIR}/picoruby/mrbgems/mruby-compiler2/lib/prism/include
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi/include
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-midi/include
     ${ADDITIONAL_INCLUDE_DIRS}
   PRIV_REQUIRES
     esp_driver_gpio

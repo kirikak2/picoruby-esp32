@@ -63,11 +63,6 @@ begin
     puts "Loading app.rb"
     load "/home/app.rb"
   elsif File.exist?("/sd/app.rb")
-    puts "Found /sd/app.rb"
-    # Test File.read
-    content = File.read("/sd/app.rb")
-    puts "  File.read result: #{content.inspect}"
-    # Try loading the file
     puts "  Loading /sd/app.rb..."
     load "/sd/app.rb"
   end
