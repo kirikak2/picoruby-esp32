@@ -28,12 +28,14 @@ else
     puts "Initializing SD card (#{BoardConfig::SD_MODE} mode)..."
     if BoardConfig::SD_MODE == "sdmmc"
       # SDMMC mode
+      require "sdmmc"
       puts "  CLK=#{BoardConfig::SD_CLK_PIN}, CMD=#{BoardConfig::SD_CMD_PIN}, D0=#{BoardConfig::SD_D0_PIN}"
-      Shell.setup_sdcard_sdmmc(
-        BoardConfig::SD_CLK_PIN,
-        BoardConfig::SD_CMD_PIN,
-        BoardConfig::SD_D0_PIN
+      sdmmc = SDMMC.new(
+        clk_pin: BoardConfig::SD_CLK_PIN,
+        cmd_pin: BoardConfig::SD_CMD_PIN,
+        d0_pin:  BoardConfig::SD_D0_PIN
       )
+      Shell.setup_sdcard(sdmmc)
     else
       # SPI mode (M5Stack)
       require "spi"
@@ -74,6 +76,6 @@ begin
 
   # $shell.show_logo
   # $shell.start
-rescue => e
+rescue Exception => e
   puts "#{e.message} (#{e.class})"
 end
