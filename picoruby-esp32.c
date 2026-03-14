@@ -20,6 +20,13 @@ static const char *TAG = "PICORUBY";
 
 #include "mrb/main_task.c"
 
+// Forward declarations for Ruby-callable C functions
+#if defined(PICORB_VM_MRUBYC)
+static void c_script_manager_clear(mrbc_vm *vm, mrbc_value v[], int argc);
+static void c_script_manager_add(mrbc_vm *vm, mrbc_value v[], int argc);
+static void c_script_manager_set_ready(mrbc_vm *vm, mrbc_value v[], int argc);
+#endif
+
 #ifndef HEAP_SIZE
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
 #define HEAP_SIZE (1024 * 180)
@@ -48,6 +55,12 @@ static bool g_vm_initialized = false;
 static mrbc_vm *g_vm = NULL;
 #endif
 
+// Script management
+static char g_current_script[128] = {0};
+static char g_requested_script[128] = {0};
+static volatile bool g_stop_requested = false;
+static volatile bool g_script_change_requested = false;
+
 void
 initialize_nvs(void)
 {
@@ -70,8 +83,18 @@ picoruby_esp32(void)
   mrbc_tcb *main_tcb = mrbc_create_task(main_task, 0);
   mrbc_set_task_name(main_tcb, "main_task");
   mrbc_vm *vm = &main_tcb->vm;
+  g_vm = vm;  // Store for later use
 
   picoruby_init_require(vm);
+
+  // Register ScriptManager class for Ruby to notify C about scripts
+  mrbc_class *class_ScriptManager = mrbc_define_class(vm, "ScriptManager", mrbc_class_object);
+  mrbc_define_method(vm, class_ScriptManager, "clear", c_script_manager_clear);
+  mrbc_define_method(vm, class_ScriptManager, "add", c_script_manager_add);
+  mrbc_define_method(vm, class_ScriptManager, "set_ready", c_script_manager_set_ready);
+  ESP_LOGI(TAG, "ScriptManager class registered");
+
+  g_vm_initialized = true;
   mrbc_run();
 #elif defined(PICORB_VM_MRUBY)
   mrb_state *mrb = mrb_open_with_custom_alloc(heap_pool, HEAP_SIZE);
@@ -112,6 +135,14 @@ picoruby_esp32_init(void)
     return false;
   }
   picoruby_init_require(g_vm);
+
+  // Register ScriptManager class for Ruby to notify C about scripts
+  mrbc_class *class_ScriptManager = mrbc_define_class(g_vm, "ScriptManager", mrbc_class_object);
+  mrbc_define_method(g_vm, class_ScriptManager, "clear", c_script_manager_clear);
+  mrbc_define_method(g_vm, class_ScriptManager, "add", c_script_manager_add);
+  mrbc_define_method(g_vm, class_ScriptManager, "set_ready", c_script_manager_set_ready);
+  ESP_LOGI(TAG, "ScriptManager class registered");
+
   g_vm_initialized = true;
   ESP_LOGI(TAG, "PicoRuby VM (mrubyc) initialized");
   return true;
@@ -247,4 +278,175 @@ picoruby_esp32_run_script(const char *script, size_t script_len, const char *fil
 #else
   return false;
 #endif
+}
+
+bool
+picoruby_esp32_request_script_change(const char *script_path)
+{
+  if (script_path == NULL) {
+    return false;
+  }
+
+  strncpy(g_requested_script, script_path, sizeof(g_requested_script) - 1);
+  g_requested_script[sizeof(g_requested_script) - 1] = '\0';
+  g_script_change_requested = true;
+  g_stop_requested = true;
+
+  // Update current script path
+  strncpy(g_current_script, script_path, sizeof(g_current_script) - 1);
+  g_current_script[sizeof(g_current_script) - 1] = '\0';
+
+  ESP_LOGI(TAG, "Script change requested: %s", script_path);
+  return true;
+}
+
+const char*
+picoruby_esp32_get_current_script(void)
+{
+  return g_current_script[0] ? g_current_script : NULL;
+}
+
+void
+picoruby_esp32_request_stop(void)
+{
+  g_stop_requested = true;
+  ESP_LOGI(TAG, "Stop requested");
+}
+
+bool
+picoruby_esp32_stop_requested(void)
+{
+  return g_stop_requested;
+}
+
+void
+picoruby_esp32_clear_stop_flag(void)
+{
+  g_stop_requested = false;
+  g_script_change_requested = false;
+}
+
+void
+picoruby_esp32_midi_cleanup(void)
+{
+  ESP_LOGI(TAG, "Performing MIDI cleanup...");
+
+  // Declare external functions
+  extern int USB_MIDI_send_packet(uint8_t cable, uint8_t cin, uint8_t midi1, uint8_t midi2, uint8_t midi3);
+  extern int SAM2695_send_packet(uint8_t cable, uint8_t cin, uint8_t midi1, uint8_t midi2, uint8_t midi3);
+
+  // Send cleanup messages to all MIDI channels (0-15)
+  for (uint8_t ch = 0; ch < 16; ch++) {
+    uint8_t status_cc = 0xB0 | ch;  // Control Change
+
+    // All Sound Off (CC #120)
+    USB_MIDI_send_packet(0, 0x0B, status_cc, 120, 0);
+    SAM2695_send_packet(0, 0x0B, status_cc, 120, 0);
+
+    // All Notes Off (CC #123)
+    USB_MIDI_send_packet(0, 0x0B, status_cc, 123, 0);
+    SAM2695_send_packet(0, 0x0B, status_cc, 123, 0);
+  }
+
+  // Send MIDI Stop (0xFC)
+  USB_MIDI_send_packet(0, 0x05, 0xFC, 0, 0);  // CIN 0x05 for single-byte system common
+  SAM2695_send_packet(0, 0x05, 0xFC, 0, 0);
+
+  ESP_LOGI(TAG, "MIDI cleanup completed");
+}
+
+// Script list management
+static char g_script_list[PICORUBY_MAX_SCRIPTS][PICORUBY_MAX_SCRIPT_NAME];
+static int g_script_count = 0;
+static volatile bool g_script_list_ready = false;
+
+// Ruby-callable C functions for script management
+#if defined(PICORB_VM_MRUBYC)
+static void
+c_script_manager_clear(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+  (void)vm; (void)v; (void)argc;
+  picoruby_esp32_clear_script_list();
+  SET_NIL_RETURN();
+}
+
+static void
+c_script_manager_add(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+  (void)argc;
+  if (v[1].tt != MRBC_TT_STRING) {
+    SET_FALSE_RETURN();
+    return;
+  }
+  const char *filename = (const char *)v[1].string->data;
+  bool result = picoruby_esp32_add_script(filename);
+  if (result) {
+    SET_TRUE_RETURN();
+  } else {
+    SET_FALSE_RETURN();
+  }
+}
+
+static void
+c_script_manager_set_ready(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+  (void)argc;
+  bool ready = true;
+  if (argc > 0 && v[1].tt == MRBC_TT_FALSE) {
+    ready = false;
+  }
+  picoruby_esp32_set_script_list_ready(ready);
+  SET_NIL_RETURN();
+}
+#endif
+
+void
+picoruby_esp32_clear_script_list(void)
+{
+  g_script_count = 0;
+  g_script_list_ready = false;
+  memset(g_script_list, 0, sizeof(g_script_list));
+  ESP_LOGD(TAG, "Script list cleared");
+}
+
+bool
+picoruby_esp32_add_script(const char *filename)
+{
+  if (filename == NULL || g_script_count >= PICORUBY_MAX_SCRIPTS) {
+    return false;
+  }
+
+  strncpy(g_script_list[g_script_count], filename, PICORUBY_MAX_SCRIPT_NAME - 1);
+  g_script_list[g_script_count][PICORUBY_MAX_SCRIPT_NAME - 1] = '\0';
+  g_script_count++;
+  ESP_LOGD(TAG, "Added script: %s (total: %d)", filename, g_script_count);
+  return true;
+}
+
+int
+picoruby_esp32_get_script_count(void)
+{
+  return g_script_count;
+}
+
+const char*
+picoruby_esp32_get_script_name(int index)
+{
+  if (index < 0 || index >= g_script_count) {
+    return NULL;
+  }
+  return g_script_list[index];
+}
+
+bool
+picoruby_esp32_script_list_ready(void)
+{
+  return g_script_list_ready;
+}
+
+void
+picoruby_esp32_set_script_list_ready(bool ready)
+{
+  g_script_list_ready = ready;
+  ESP_LOGI(TAG, "Script list ready: %s (%d scripts)", ready ? "yes" : "no", g_script_count);
 }

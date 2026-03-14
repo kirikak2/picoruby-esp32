@@ -3,21 +3,21 @@
 
 module BoardConfig
   # Board name
-  BOARD_NAME = "M5Stack CoreS3 SE"
+  BOARD_NAME = "Freenove ESP32-S3"
 
   # SD Card interface mode: "sdmmc" or "spi"
-  SD_MODE = "spi"
+  SD_MODE = "sdmmc"
 
   # SDMMC pins (for Freenove)
-  SD_CLK_PIN = -1
-  SD_CMD_PIN = -1
-  SD_D0_PIN  = -1
+  SD_CLK_PIN = 39
+  SD_CMD_PIN = 38
+  SD_D0_PIN  = 40
 
   # SPI pins (for M5Stack)
-  SD_SCK_PIN  = 36
-  SD_MISO_PIN = 35
-  SD_MOSI_PIN = 37
-  SD_CS_PIN   = 4
+  SD_SCK_PIN  = -1
+  SD_MISO_PIN = -1
+  SD_MOSI_PIN = -1
+  SD_CS_PIN   = -1
 
   # SPI unit for SD card (SPI mode only)
   SD_SPI_UNIT = :ESP32_SPI2_HOST

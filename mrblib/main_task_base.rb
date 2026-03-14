@@ -8,6 +8,25 @@ STDOUT = IO.new
 
 puts "Board: #{BoardConfig::BOARD_NAME}"
 
+# Scan SD card for Ruby scripts and notify C side
+def notify_scripts_to_c
+  begin
+    sm = ScriptManager.new
+    sm.clear
+    Dir.open("/sd") do |dir|
+      while entry = dir.read
+        next if entry == "." || entry == ".."
+        next unless entry.end_with?(".rb")
+        sm.add(entry)
+      end
+    end
+    sm.set_ready
+    puts "Scripts notified to C side"
+  rescue => e
+    puts "Failed to notify scripts: #{e.message}"
+  end
+end
+
 # Setup flash disk
 begin
   STDIN.echo = false
@@ -50,6 +69,9 @@ else
       )
       Shell.setup_sdcard(spi)
     end
+
+    # Notify C side about available Ruby scripts
+    notify_scripts_to_c
   rescue => e
     puts "SD card not available: #{e.message}"
   end
