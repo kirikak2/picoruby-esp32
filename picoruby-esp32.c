@@ -25,6 +25,9 @@ static const char *TAG = "PICORUBY";
 static void c_script_manager_clear(mrbc_vm *vm, mrbc_value v[], int argc);
 static void c_script_manager_add(mrbc_vm *vm, mrbc_value v[], int argc);
 static void c_script_manager_set_ready(mrbc_vm *vm, mrbc_value v[], int argc);
+static void c_script_manager_get_requested(mrbc_vm *vm, mrbc_value v[], int argc);
+static void c_script_manager_clear_request(mrbc_vm *vm, mrbc_value v[], int argc);
+static void c_script_manager_stop_requested(mrbc_vm *vm, mrbc_value v[], int argc);
 #endif
 
 #ifndef HEAP_SIZE
@@ -92,6 +95,9 @@ picoruby_esp32(void)
   mrbc_define_method(vm, class_ScriptManager, "clear", c_script_manager_clear);
   mrbc_define_method(vm, class_ScriptManager, "add", c_script_manager_add);
   mrbc_define_method(vm, class_ScriptManager, "set_ready", c_script_manager_set_ready);
+  mrbc_define_method(vm, class_ScriptManager, "get_requested", c_script_manager_get_requested);
+  mrbc_define_method(vm, class_ScriptManager, "clear_request", c_script_manager_clear_request);
+  mrbc_define_method(vm, class_ScriptManager, "stop_requested?", c_script_manager_stop_requested);
   ESP_LOGI(TAG, "ScriptManager class registered");
 
   g_vm_initialized = true;
@@ -141,6 +147,9 @@ picoruby_esp32_init(void)
   mrbc_define_method(g_vm, class_ScriptManager, "clear", c_script_manager_clear);
   mrbc_define_method(g_vm, class_ScriptManager, "add", c_script_manager_add);
   mrbc_define_method(g_vm, class_ScriptManager, "set_ready", c_script_manager_set_ready);
+  mrbc_define_method(g_vm, class_ScriptManager, "get_requested", c_script_manager_get_requested);
+  mrbc_define_method(g_vm, class_ScriptManager, "clear_request", c_script_manager_clear_request);
+  mrbc_define_method(g_vm, class_ScriptManager, "stop_requested?", c_script_manager_stop_requested);
   ESP_LOGI(TAG, "ScriptManager class registered");
 
   g_vm_initialized = true;
@@ -397,6 +406,38 @@ c_script_manager_set_ready(mrbc_vm *vm, mrbc_value v[], int argc)
   }
   picoruby_esp32_set_script_list_ready(ready);
   SET_NIL_RETURN();
+}
+
+static void
+c_script_manager_get_requested(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+  (void)v; (void)argc;
+  if (g_script_change_requested && g_requested_script[0] != '\0') {
+    mrbc_value str = mrbc_string_new_cstr(vm, g_requested_script);
+    SET_RETURN(str);
+  } else {
+    SET_NIL_RETURN();
+  }
+}
+
+static void
+c_script_manager_clear_request(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+  (void)vm; (void)v; (void)argc;
+  g_script_change_requested = false;
+  g_requested_script[0] = '\0';
+  SET_NIL_RETURN();
+}
+
+static void
+c_script_manager_stop_requested(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+  (void)vm; (void)v; (void)argc;
+  if (g_stop_requested) {
+    SET_TRUE_RETURN();
+  } else {
+    SET_FALSE_RETURN();
+  }
 }
 #endif
 

@@ -79,25 +79,46 @@ end
 
 GC.start
 
-begin
-  if File.exist?("/home/app.mrb")
-    puts "Loading app.mrb"
-    load "/home/app.mrb"
-  elsif File.exist?("/home/app.rb")
-    puts "Loading app.rb"
-    load "/home/app.rb"
-  elsif File.exist?("/sd/app.rb")
-    puts "  Loading /sd/app.rb..."
-    load "/sd/app.rb"
+# Helper to load and run a script
+def load_script(script_path)
+  puts "Loading script: #{script_path}"
+  begin
+    if File.exist?(script_path)
+      load script_path
+      puts "Script finished: #{script_path}"
+    else
+      puts "Script not found: #{script_path}"
+    end
+  rescue => e
+    puts "Script error: #{e.message}"
+  end
+  GC.start
+end
+
+puts "Initialization complete."
+puts "Available commands:"
+puts "  load /sd/app.rb  - Load and run a script from SD card"
+puts "  (or select script from M5Stack UI)"
+print "> "  # Show initial prompt
+
+sm = ScriptManager.new
+loop do
+  # Check for console input (load command)
+  console_script = sm.check_console
+  if console_script
+    puts "Loading: #{console_script}"
+    sm.clear_request
+    load_script(console_script)
   end
 
-  GC.start
+  # Check for script request from UI
+  script_path = sm.get_requested
+  if script_path
+    puts "UI request: #{script_path}"
+    sm.clear_request
+    load_script(script_path)
+    print "> "  # Show prompt after UI script finishes
+  end
 
-  # $shell = Shell.new(clean: true)
-  # puts "Starting shell...\n\n"
-
-  # $shell.show_logo
-  # $shell.start
-rescue Exception => e
-  puts "#{e.message} (#{e.class})"
+  sleep_ms 100
 end
