@@ -104,45 +104,87 @@ end
 
 GC.start
 
-# Helper to load and run a script
-def load_script(script_path)
-  puts "Loading script: #{script_path}"
+# Perform MIDI cleanup (All Notes Off, MIDI Stop)
+def perform_midi_cleanup
   begin
-    if File.exist?(script_path)
-      load script_path
-      puts "Script finished: #{script_path}"
-    else
+    sm = ScriptManager.new
+    sm.cleanup_midi
+    puts "MIDI cleanup done"
+  rescue => e
+    # cleanup_midi may not be available in all environments
+    puts "MIDI cleanup skipped: #{e.message}"
+  end
+end
+
+# Execute autorun script (called once at startup)
+def run_autorun_script(script_path)
+  puts "Autorun: #{script_path}"
+  begin
+    unless File.exist?(script_path)
       puts "Script not found: #{script_path}"
+      return
     end
+
+    # Execute the script
+    load script_path
+    puts "Script finished: #{script_path}"
   rescue => e
     puts "Script error: #{e.message}"
+  ensure
+    # Always perform MIDI cleanup
+    perform_midi_cleanup
+    GC.start
   end
-  GC.start
+end
+
+# Request script load (saves to NVS and restarts ESP32)
+def request_load_script(script_path)
+  sm = ScriptManager.new
+  puts "Scheduling: #{script_path}"
+  puts "Restarting ESP32..."
+  sleep_ms 100
+  if sm.set_autorun(script_path)
+    sm.esp_restart
+    # Never returns
+  else
+    puts "Failed to set autorun"
+  end
 end
 
 puts "Initialization complete."
-puts "Available commands:"
-puts "  load /sd/app.rb  - Load and run a script from SD card"
-puts "  (or select script from M5Stack UI)"
-print "> "  # Show initial prompt
 
+# Check for autorun script at startup
 sm = ScriptManager.new
+autorun_script = sm.get_autorun
+if autorun_script
+  # Clear autorun first (so we don't loop on crash)
+  sm.clear_autorun
+  puts "Found autorun script: #{autorun_script}"
+  run_autorun_script(autorun_script)
+end
+
+puts "Available commands:"
+puts "  load /sd/app.rb  - Load and run a script (restarts ESP32)"
+puts "  heap             - Show free heap memory"
+puts "  restart          - Restart ESP32"
+print "> "
+
+# Main loop - only handles console input and UI requests
 loop do
   # Check for console input (load command)
+  # Note: check_console now handles set_autorun + esp_restart internally
   console_script = sm.check_console
   if console_script
-    puts "Loading: #{console_script}"
-    sm.clear_request
-    load_script(console_script)
+    # Console returned a script path - request load (will restart)
+    request_load_script(console_script)
   end
 
   # Check for script request from UI
   script_path = sm.get_requested
   if script_path
-    puts "UI request: #{script_path}"
     sm.clear_request
-    load_script(script_path)
-    print "> "  # Show prompt after UI script finishes
+    # UI requested a script - request load (will restart)
+    request_load_script(script_path)
   end
 
   sleep_ms 100
