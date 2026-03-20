@@ -23,51 +23,49 @@ module BoardConfig
   SD_SPI_UNIT = :ESP32_SPI2_HOST
 end
 
-require 'machine'
-require "watchdog"
-Watchdog.disable
-require "shell"
 # BoardConfig is defined above (concatenated by CMake)
-STDIN = IO.new
-STDOUT = IO.new
 
-puts "Board: #{BoardConfig::BOARD_NAME}"
+# ============================================================================
+# Function definitions (used in both modes)
+# ============================================================================
 
 # Scan SD card for Ruby scripts and notify C side
 def notify_scripts_to_c
-  begin
-    sm = ScriptManager.new
-    sm.clear
-    Dir.open("/sd") do |dir|
-      while entry = dir.read
-        next if entry == "." || entry == ".."
-        next unless entry.end_with?(".rb")
-        sm.add(entry)
+  sm = ScriptManager.new
+  sm.clear
+
+  # Only scan if SD card is mounted
+  if $sd_available
+    begin
+      Dir.open("/sd") do |dir|
+        while entry = dir.read
+          next if entry == "." || entry == ".."
+          next unless entry.end_with?(".rb")
+          sm.add(entry)
+        end
       end
+      puts "Scripts notified to C side"
+    rescue => e
+      puts "Failed to scan scripts: #{e.message}"
     end
-    sm.set_ready
-    puts "Scripts notified to C side"
-  rescue => e
-    puts "Failed to notify scripts: #{e.message}"
+  else
+    puts "SD card not available, skipping script scan"
   end
+
+  # Always mark as ready regardless of SD card status
+  sm.set_ready
 end
 
-# Setup flash disk
-begin
-  STDIN.echo = false
-  puts "Initializing FLASH disk as the root volume... "
-  Shell.setup_root_volume(:flash, label: 'storage')
-  Shell.setup_system_files
-  puts "Available"
-rescue => e
-  puts "Not available"
-  puts "#{e.message} (#{e.class})"
-end
+# SD card initialization function (can be called at startup and on refresh)
+def try_init_sd_card
+  return false if BoardConfig::SD_MODE == "none"
 
-# Setup SD card
-if BoardConfig::SD_MODE == "none"
-  puts "SD card disabled (GPIO conflict with PSRAM)"
-else
+  # Skip if already mounted
+  if VFS.volume_index("/sd")
+    puts "SD card already mounted"
+    return true
+  end
+
   begin
     puts "Initializing SD card (#{BoardConfig::SD_MODE} mode)..."
     if BoardConfig::SD_MODE == "sdmmc"
@@ -94,98 +92,187 @@ else
       )
       Shell.setup_sdcard(spi)
     end
-
-    # Notify C side about available Ruby scripts
-    notify_scripts_to_c
   rescue => e
-    puts "SD card not available: #{e.message}"
+    puts "SD card driver error: #{e.message}"
+  end
+
+  # Check if SD card was actually mounted using VFS
+  puts "Checking SD card mount status..."
+  if VFS.volume_index("/sd")
+    puts "SD card mounted successfully"
+    return true
+  else
+    puts "SD card not mounted"
+    return false
   end
 end
 
-GC.start
-
-# Perform MIDI cleanup (All Notes Off, MIDI Stop)
-def perform_midi_cleanup
+# Execute a script
+def run_script(script_path)
+  puts "Running: #{script_path}"
   begin
-    sm = ScriptManager.new
-    sm.cleanup_midi
-    puts "MIDI cleanup done"
-  rescue => e
-    # cleanup_midi may not be available in all environments
-    puts "MIDI cleanup skipped: #{e.message}"
-  end
-end
+    unless $sd_available
+      puts "SD card not available, skipping script"
+      return true
+    end
 
-# Execute autorun script (called once at startup)
-def run_autorun_script(script_path)
-  puts "Autorun: #{script_path}"
-  begin
     unless File.exist?(script_path)
       puts "Script not found: #{script_path}"
-      return
+      return true
     end
 
     # Execute the script
     load script_path
     puts "Script finished: #{script_path}"
+    return true
   rescue => e
     puts "Script error: #{e.message}"
+    return true
   ensure
-    # Always perform MIDI cleanup
-    perform_midi_cleanup
+    # MIDI cleanup is handled by Supervisor C code
     GC.start
   end
 end
 
-# Request script load (saves to NVS and restarts ESP32)
-def request_load_script(script_path)
-  sm = ScriptManager.new
-  puts "Scheduling: #{script_path}"
-  puts "Restarting ESP32..."
-  sleep_ms 100
-  if sm.set_autorun(script_path)
-    sm.esp_restart
-    # Never returns
-  else
-    puts "Failed to set autorun"
-  end
-end
+# ============================================================================
+# Main execution: UI Mode vs Script Mode
+# ============================================================================
+# The supervisor passes a script path via get_autorun_script()
+# - If a script path is provided: Script Mode - run the script then exit
+# - If nil: UI Mode - enter the script selection loop
+# ============================================================================
 
-puts "Initialization complete."
-
-# Check for autorun script at startup
 sm = ScriptManager.new
-autorun_script = sm.get_autorun
-if autorun_script
-  # Clear autorun first (so we don't loop on crash)
-  sm.clear_autorun
-  puts "Found autorun script: #{autorun_script}"
-  run_autorun_script(autorun_script)
-end
+script_to_run = sm.get_autorun_script
 
-puts "Available commands:"
-puts "  load /sd/app.rb  - Load and run a script (restarts ESP32)"
-puts "  heap             - Show free heap memory"
-puts "  restart          - Restart ESP32"
-print "> "
+if script_to_run
+  # ========== Script Mode ==========
+  # Load minimal required gems
+  require 'machine'
+  require "watchdog"
+  Watchdog.disable
+  require "shell"
 
-# Main loop - only handles console input and UI requests
-loop do
-  # Check for console input (load command)
-  # Note: check_console now handles set_autorun + esp_restart internally
-  console_script = sm.check_console
-  if console_script
-    # Console returned a script path - request load (will restart)
-    request_load_script(console_script)
+  STDIN = IO.new
+  STDOUT = IO.new
+
+  puts "Script Mode: #{script_to_run}"
+
+  # VFS state may be cleared by mrbc_cleanup(), check and re-init if needed
+  $sd_available = VFS.volume_index("/sd") ? true : false
+  if !$sd_available && BoardConfig::SD_MODE != "none"
+    puts "SD card not mounted, re-initializing..."
+    $sd_available = try_init_sd_card
+  else
+    puts "SD card ready"
   end
 
-  # Check for script request from UI
-  script_path = sm.get_requested
-  if script_path
-    sm.clear_request
-    # UI requested a script - request load (will restart)
-    request_load_script(script_path)
+  run_script(script_to_run)
+  puts "Script completed, exiting to supervisor"
+  # main_task.rb ends here, supervisor will detect and restart in UI mode
+
+else
+  # ========== UI Mode ==========
+  # Perform full initialization only in UI mode
+  require 'machine'
+  require "watchdog"
+  Watchdog.disable
+  require "shell"
+
+  STDIN = IO.new
+  STDOUT = IO.new
+
+  puts "Board: #{BoardConfig::BOARD_NAME}"
+
+  # Setup flash disk
+  begin
+    STDIN.echo = false
+    puts "Initializing FLASH disk as the root volume... "
+    Shell.setup_root_volume(:flash, label: 'storage')
+    Shell.setup_system_files
+    puts "Available"
+  rescue => e
+    puts "Not available"
+    puts "#{e.message} (#{e.class})"
   end
 
-  sleep_ms 100
+  # Setup SD card
+  $sd_available = false
+  if BoardConfig::SD_MODE == "none"
+    puts "SD card disabled (GPIO conflict with PSRAM)"
+  else
+    $sd_available = try_init_sd_card
+  end
+
+  # Always notify C side about scripts (even if SD card failed)
+  notify_scripts_to_c
+
+  GC.start
+
+  puts "Initialization complete."
+  puts "UI Mode: Waiting for script selection"
+  puts ""
+  puts "Available commands:"
+  puts "  load /sd/app.rb  - Load and run a script"
+  puts "  heap             - Show free heap memory"
+  puts "  restart          - Restart ESP32"
+  print "> "
+
+  $loop_count = 0
+  loop do
+    $loop_count += 1
+    # Debug: print every 50 iterations (5 seconds)
+    if $loop_count % 50 == 0
+      puts "[Loop #{$loop_count}] Waiting for script..."
+    end
+
+    # Check for console input (load command)
+    console_script = sm.check_console
+    if console_script
+      puts "[Console] Load: #{console_script}"
+      # MIDI cleanup is handled by Supervisor C code
+      # Request supervisor to load this script
+      sm.request_script(console_script)
+      # Exit UI loop - supervisor will restart with the new script
+      break
+    end
+
+    # Check for script request from UI (M5Stack touch)
+    script_path = sm.get_requested
+    if script_path
+      puts "[UI] Load: #{script_path}"
+      sm.clear_request
+      # MIDI cleanup is handled by Supervisor C code
+      # Request supervisor to load this script
+      sm.request_script(script_path)
+      # Exit UI loop - supervisor will restart with the new script
+      break
+    end
+
+    # Check for SD card refresh request from UI
+    if sm.sd_refresh_requested?
+      puts "[UI] SD refresh requested"
+      sm.clear_sd_refresh
+      if !$sd_available
+        $sd_available = try_init_sd_card
+        if $sd_available
+          notify_scripts_to_c
+          puts "SD card re-initialized successfully"
+        else
+          puts "SD card still not available"
+        end
+      else
+        # Already available, just re-scan scripts
+        notify_scripts_to_c
+        puts "Scripts re-scanned"
+      end
+    end
+
+    sleep_ms 100
+  end
+
+  puts "Exiting UI loop"
 end
+
+# main_task.rb ends - supervisor will handle next step
+puts "main_task.rb completed"

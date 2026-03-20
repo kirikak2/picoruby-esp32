@@ -120,4 +120,11 @@ bool picoruby_esp32_script_list_ready(void);
  */
 void picoruby_esp32_set_script_list_ready(bool ready);
 
+/**
+ * @brief Request SD card re-initialization from UI
+ *
+ * Called when user presses Refresh button and SD card was not available at boot
+ */
+void picoruby_esp32_request_sd_refresh(void);
+
 #endif // PICORUBY_ESP32_H

@@ -27,7 +27,8 @@ static int s_console_buffer_pos = 0;
 #include "hal.h" // in picoruby-machine
 #endif
 
-#include "mrb/main_task.c"
+// main_task bytecode is compiled separately and linked
+extern const uint8_t main_task[];
 
 // Forward declarations for Ruby-callable C functions
 #if defined(PICORB_VM_MRUBYC)
@@ -44,6 +45,8 @@ static void c_script_manager_esp_restart(mrbc_vm *vm, mrbc_value v[], int argc);
 static void c_script_manager_set_autorun(mrbc_vm *vm, mrbc_value v[], int argc);
 static void c_script_manager_get_autorun(mrbc_vm *vm, mrbc_value v[], int argc);
 static void c_script_manager_clear_autorun(mrbc_vm *vm, mrbc_value v[], int argc);
+static void c_script_manager_sd_refresh_requested(mrbc_vm *vm, mrbc_value v[], int argc);
+static void c_script_manager_clear_sd_refresh(mrbc_vm *vm, mrbc_value v[], int argc);
 #endif
 
 // NVS namespace and key for autorun script
@@ -66,9 +69,10 @@ static void c_script_manager_clear_autorun(mrbc_vm *vm, mrbc_value v[], int argc
 
 #if defined(HEAP_IN_PSRAM)
 // Place heap in PSRAM for ESP32-S3 with external memory
-EXT_RAM_BSS_ATTR static uint8_t heap_pool[HEAP_SIZE];
+// Note: Not static, accessible from picoruby_supervisor.c
+EXT_RAM_BSS_ATTR uint8_t heap_pool[HEAP_SIZE];
 #else
-static uint8_t heap_pool[HEAP_SIZE];
+uint8_t heap_pool[HEAP_SIZE];
 #endif
 
 #if defined(PICORB_VM_MRUBY)
@@ -82,11 +86,11 @@ static bool g_vm_initialized = false;
 static mrbc_vm *g_vm = NULL;
 #endif
 
-// Script management
+// Script management (accessible from picoruby_supervisor.c)
 static char g_current_script[128] = {0};
-static char g_requested_script[128] = {0};
-static volatile bool g_stop_requested = false;
-static volatile bool g_script_change_requested = false;
+char g_requested_script[128] = {0};
+volatile bool g_stop_requested = false;
+volatile bool g_script_change_requested = false;
 
 void
 initialize_nvs(void)
@@ -129,6 +133,8 @@ picoruby_esp32(void)
   mrbc_define_method(vm, class_ScriptManager, "set_autorun", c_script_manager_set_autorun);
   mrbc_define_method(vm, class_ScriptManager, "get_autorun", c_script_manager_get_autorun);
   mrbc_define_method(vm, class_ScriptManager, "clear_autorun", c_script_manager_clear_autorun);
+  mrbc_define_method(vm, class_ScriptManager, "sd_refresh_requested?", c_script_manager_sd_refresh_requested);
+  mrbc_define_method(vm, class_ScriptManager, "clear_sd_refresh", c_script_manager_clear_sd_refresh);
   ESP_LOGI(TAG, "ScriptManager class registered");
 
   g_vm_initialized = true;
@@ -188,6 +194,8 @@ picoruby_esp32_init(void)
   mrbc_define_method(g_vm, class_ScriptManager, "set_autorun", c_script_manager_set_autorun);
   mrbc_define_method(g_vm, class_ScriptManager, "get_autorun", c_script_manager_get_autorun);
   mrbc_define_method(g_vm, class_ScriptManager, "clear_autorun", c_script_manager_clear_autorun);
+  mrbc_define_method(g_vm, class_ScriptManager, "sd_refresh_requested?", c_script_manager_sd_refresh_requested);
+  mrbc_define_method(g_vm, class_ScriptManager, "clear_sd_refresh", c_script_manager_clear_sd_refresh);
   ESP_LOGI(TAG, "ScriptManager class registered");
 
   g_vm_initialized = true;
@@ -406,6 +414,10 @@ picoruby_esp32_midi_cleanup(void)
 static char g_script_list[PICORUBY_MAX_SCRIPTS][PICORUBY_MAX_SCRIPT_NAME];
 static int g_script_count = 0;
 static volatile bool g_script_list_ready = false;
+
+// SD card refresh request (from UI to Ruby)
+// Note: Not static, accessible from picoruby_supervisor.c
+volatile bool g_sd_refresh_requested = false;
 
 // Ruby-callable C functions for script management
 #if defined(PICORB_VM_MRUBYC)
@@ -716,6 +728,26 @@ c_script_manager_clear_autorun(mrbc_vm *vm, mrbc_value v[], int argc)
   ESP_LOGI(TAG, "Autorun script cleared");
   SET_TRUE_RETURN();
 }
+
+static void
+c_script_manager_sd_refresh_requested(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+  (void)vm; (void)v; (void)argc;
+  if (g_sd_refresh_requested) {
+    SET_TRUE_RETURN();
+  } else {
+    SET_FALSE_RETURN();
+  }
+}
+
+static void
+c_script_manager_clear_sd_refresh(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+  (void)vm; (void)v; (void)argc;
+  g_sd_refresh_requested = false;
+  ESP_LOGI(TAG, "SD refresh request cleared");
+  SET_NIL_RETURN();
+}
 #endif
 
 void
@@ -767,4 +799,11 @@ picoruby_esp32_set_script_list_ready(bool ready)
 {
   g_script_list_ready = ready;
   ESP_LOGI(TAG, "Script list ready: %s (%d scripts)", ready ? "yes" : "no", g_script_count);
+}
+
+void
+picoruby_esp32_request_sd_refresh(void)
+{
+  g_sd_refresh_requested = true;
+  ESP_LOGI(TAG, "SD card refresh requested from UI");
 }
