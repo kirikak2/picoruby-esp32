@@ -3,7 +3,7 @@
 
 module BoardConfig
   # Board name
-  BOARD_NAME = "M5Stack CoreS3 SE"
+  BOARD_NAME = "M5Stack CoreS3 SE (USB Serial)"
 
   # SD Card interface mode: "sdmmc" or "spi"
   SD_MODE = "spi"

@@ -149,8 +149,12 @@ add_custom_target(
 add_dependencies(${COMPONENT_LIB} ${CUSTOM_TARGET_NAME})
 
 # Generate board_config.rb from template based on Kconfig settings
-if(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3)
-  set(BOARD_NAME "M5Stack CoreS3 SE")
+if(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3 OR CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL)
+  if(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL)
+    set(BOARD_NAME "M5Stack CoreS3 SE (USB Serial)")
+  else()
+    set(BOARD_NAME "M5Stack CoreS3 SE")
+  endif()
   set(SD_MODE "spi")
   # SPI pins for M5Stack
   set(SD_SCK_PIN 36)

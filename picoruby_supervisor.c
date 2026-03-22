@@ -36,7 +36,7 @@ extern void mrbc_sandbox_cleanup(void);
 static const char *TAG = "SUPERVISOR";
 
 // Platform-specific includes
-#ifdef CONFIG_USB_MIDI_BOARD_M5STACK_CORES3
+#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL)
 #include "ui_common.h"
 #endif
 
@@ -79,7 +79,7 @@ static volatile bool s_ruby_script_requested = false;
 // Forward declarations
 static void supervisor_task(void *arg);
 static void picoruby_runner_task(void *arg);
-static void run_vm_with_main_task(void);
+static bool run_vm_with_main_task(void);
 static void register_script_manager_class(mrbc_vm *vm);
 
 // External declarations from picoruby-esp32.c
@@ -202,7 +202,7 @@ void supervisor_log(const char *format, ...)
     // Always log to serial
     ESP_LOGI(TAG, "%s", buf);
 
-#ifdef CONFIG_USB_MIDI_BOARD_M5STACK_CORES3
+#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL)
     // Also log to M5Stack UI
     extern void ui_add_log(const char *msg);
     ui_add_log(buf);
@@ -250,6 +250,49 @@ void supervisor_clear_ruby_request(void)
 // ============================================================================
 // Internal Functions
 // ============================================================================
+
+#if defined(PICORB_VM_MRUBYC)
+/**
+ * @brief Build error message from VM exception
+ * @param vm      Pointer to VM
+ * @param buf     Output buffer
+ * @param bufsize Buffer size
+ * @return true if error message was built, false if no exception
+ */
+static bool build_error_message(const mrbc_vm *vm, char *buf, size_t bufsize)
+{
+    if (!mrbc_israised(vm)) {
+        return false;
+    }
+
+    const mrbc_exception *exc = vm->exception.exception;
+    const char *clsname = mrbc_symid_to_str(exc->cls->sym_id);
+    const char *message = exc->message ? (const char *)exc->message : clsname;
+
+    int offset = 0;
+
+    // Build basic message: "ExceptionClass in `method': message"
+    if (exc->method_id) {
+        offset = snprintf(buf, bufsize, "%s in `%s': %s",
+                         clsname,
+                         mrbc_symid_to_str(exc->method_id),
+                         message);
+    } else {
+        offset = snprintf(buf, bufsize, "%s: %s", clsname, message);
+    }
+
+    // Add call stack (max 3 levels for UI display)
+    for (int i = 0; i < 3 && i < MRBC_EXCEPTION_CALL_NEST_LEVEL; i++) {
+        if (!exc->call_nest[i]) break;
+        int remaining = bufsize - offset;
+        if (remaining <= 0) break;
+        offset += snprintf(buf + offset, remaining, "\n  in `%s'",
+                          mrbc_symid_to_str(exc->call_nest[i]));
+    }
+
+    return true;
+}
+#endif
 
 static void stop_picoruby_task(void)
 {
@@ -509,26 +552,34 @@ static void picoruby_runner_task(void *arg)
 
     ESP_LOGI(TAG, "PicoRuby runner task started");
 
-    // Run the VM with main_task.rb
-    run_vm_with_main_task();
+    // Run the VM with main_task.rb (returns success/failure)
+    bool success = run_vm_with_main_task();
 
     // Calculate execution time
     uint32_t end_time = xTaskGetTickCount();
     uint32_t exec_time = (end_time - start_time) * portTICK_PERIOD_MS;
 
-    // Store result
+    // Store result (error_message is already set in run_vm_with_main_task if error)
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     s_last_result.execution_time_ms = exec_time;
     strncpy(s_last_result.script_path, s_current_script, sizeof(s_last_result.script_path) - 1);
-    s_last_result.success = true;  // TODO: detect errors from VM
-    s_last_result.error_message[0] = '\0';
+    if (success) {
+        s_last_result.success = true;
+        s_last_result.error_message[0] = '\0';
+    }
+    // else: success=false and error_message already set by run_vm_with_main_task()
     s_has_result = true;
     xSemaphoreGive(s_state_mutex);
 
-    ESP_LOGI(TAG, "PicoRuby runner task completed (exec time: %lu ms)", (unsigned long)exec_time);
+    ESP_LOGI(TAG, "PicoRuby runner task completed (exec time: %lu ms, success: %d)",
+             (unsigned long)exec_time, success);
 
-    // Notify supervisor
-    xEventGroupSetBits(s_events, EVT_TASK_COMPLETED);
+    // Notify supervisor with appropriate event
+    if (success) {
+        xEventGroupSetBits(s_events, EVT_TASK_COMPLETED);
+    } else {
+        xEventGroupSetBits(s_events, EVT_TASK_ERROR);
+    }
 
     // Suspend self - supervisor will delete
     vTaskSuspend(NULL);
@@ -777,7 +828,7 @@ static void register_script_manager_class(mrbc_vm *vm)
 
 #endif // PICORB_VM_MRUBYC
 
-static void run_vm_with_main_task(void)
+static bool run_vm_with_main_task(void)
 {
 #if defined(PICORB_VM_MRUBYC)
     ESP_LOGI(TAG, "Initializing VM...");
@@ -789,9 +840,14 @@ static void run_vm_with_main_task(void)
     mrbc_tcb *main_tcb = mrbc_create_task(main_task, 0);
     if (main_tcb == NULL) {
         ESP_LOGE(TAG, "Failed to create main_task");
-        return;
+        return false;
     }
     mrbc_set_task_name(main_tcb, "main_task");
+
+    // Set flag_permanence to prevent automatic mrbc_vm_end() call in mrbc_run()
+    // This allows us to check for exceptions after mrbc_run() returns
+    main_tcb->vm.flag_permanence = 1;
+
     mrbc_vm *vm = &main_tcb->vm;
 
     // Initialize require system
@@ -808,8 +864,34 @@ static void run_vm_with_main_task(void)
     // Run the VM (this blocks until all tasks complete)
     mrbc_run();
 
-    ESP_LOGI(TAG, "main_task.rb completed");
+    // Check for exceptions after VM execution
+    bool success = true;
+    mrbc_tcb *tcb = mrbc_find_task("main_task");
+    if (tcb && mrbc_israised(&tcb->vm)) {
+        success = false;
+
+        // Build error message and store in result
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+        build_error_message(&tcb->vm, s_last_result.error_message,
+                           sizeof(s_last_result.error_message));
+        s_last_result.success = false;
+        xSemaphoreGive(s_state_mutex);
+
+        ESP_LOGE(TAG, "Script error: %s", s_last_result.error_message);
+
+        // Clear exception before calling mrbc_vm_end() to avoid duplicate output
+        mrbc_clear_exception(&tcb->vm);
+    }
+
+    // Manually end the VM (since we set flag_permanence = 1)
+    if (tcb) {
+        mrbc_vm_end(&tcb->vm);
+    }
+
+    ESP_LOGI(TAG, "main_task.rb completed (success=%d)", success);
+    return success;
 #else
     ESP_LOGW(TAG, "mruby VM not supported in supervisor mode");
+    return false;
 #endif
 }
