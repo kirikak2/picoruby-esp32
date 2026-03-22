@@ -85,6 +85,7 @@ end
 # Execute a script
 def run_script(script_path)
   puts "Running: #{script_path}"
+  sm = ScriptManager.new
   begin
     unless $sd_available
       puts "SD card not available, skipping script"
@@ -101,7 +102,9 @@ def run_script(script_path)
     puts "Script finished: #{script_path}"
     return true
   rescue => e
-    puts "Script error: #{e.message}"
+    error_msg = "Error: #{e.message}"
+    puts error_msg
+    sm.add_log(error_msg)
     return true
   ensure
     # MIDI cleanup is handled by Supervisor C code

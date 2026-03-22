@@ -806,6 +806,31 @@ static void c_sm_clear_sd_refresh(mrbc_vm *vm, mrbc_value v[], int argc)
     SET_NIL_RETURN();
 }
 
+static void c_sm_add_log(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+    (void)vm;
+    if (argc < 1) {
+        SET_NIL_RETURN();
+        return;
+    }
+
+    mrbc_value str = v[1];
+    if (mrbc_type(str) != MRBC_TT_STRING) {
+        SET_NIL_RETURN();
+        return;
+    }
+
+    const char *text = (const char *)mrbc_string_cstr(&str);
+#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL)
+    extern void ui_add_log(const char *msg);
+    ui_add_log(text);
+#else
+    // For non-M5Stack boards, just log to console
+    ESP_LOGI(TAG, "[Log] %s", text);
+#endif
+    SET_NIL_RETURN();
+}
+
 static void register_script_manager_class(mrbc_vm *vm)
 {
     mrbc_class *cls = mrbc_define_class(vm, "ScriptManager", mrbc_class_object);
@@ -820,6 +845,7 @@ static void register_script_manager_class(mrbc_vm *vm)
     mrbc_define_method(vm, cls, "free_heap", c_sm_free_heap);
     mrbc_define_method(vm, cls, "sd_refresh_requested?", c_sm_sd_refresh_requested);
     mrbc_define_method(vm, cls, "clear_sd_refresh", c_sm_clear_sd_refresh);
+    mrbc_define_method(vm, cls, "add_log", c_sm_add_log);
     // New supervisor-based methods
     mrbc_define_method(vm, cls, "get_autorun_script", c_sm_get_autorun_script);
     mrbc_define_method(vm, cls, "request_script", c_sm_request_script);
