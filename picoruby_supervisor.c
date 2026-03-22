@@ -458,8 +458,6 @@ static void supervisor_task(void *arg)
         );
 
         if ((bits & (EVT_TASK_COMPLETED | EVT_TASK_ERROR)) && !s_ruby_script_requested) {
-            // Script ended, return to UI mode
-            ESP_LOGI(TAG, "Script ended, returning to UI mode");
             s_picoruby_task = NULL;
 
             // Log the result
@@ -474,9 +472,32 @@ static void supervisor_task(void *arg)
             picoruby_esp32_midi_cleanup();
             vTaskDelay(pdMS_TO_TICKS(50));
 
-            // Cleanup VM and restart in UI mode
-            cleanup_vm();
-            start_picoruby_task(NULL);
+            // Check if there's a pending UI script change request (e.g., user selected another script)
+            extern volatile bool g_script_change_requested;
+            extern char g_requested_script[];
+            if (g_script_change_requested && g_requested_script[0] != '\0') {
+                // UI requested a script change - run that script instead of returning to UI mode
+                char next_script[128];
+                strncpy(next_script, g_requested_script, sizeof(next_script) - 1);
+                next_script[sizeof(next_script) - 1] = '\0';
+
+                // Clear the request flags
+                g_script_change_requested = false;
+                extern volatile bool g_stop_requested;
+                g_stop_requested = false;
+                g_requested_script[0] = '\0';
+
+                ESP_LOGI(TAG, "UI requested script change: %s", next_script);
+
+                // Cleanup VM and start the requested script
+                cleanup_vm();
+                start_picoruby_task(next_script);
+            } else {
+                // No pending request, return to UI mode
+                ESP_LOGI(TAG, "Script ended, returning to UI mode");
+                cleanup_vm();
+                start_picoruby_task(NULL);
+            }
         }
     }
 }
