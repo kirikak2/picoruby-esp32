@@ -3,21 +3,21 @@
 
 module BoardConfig
   # Board name
-  BOARD_NAME = "Freenove ESP32-S3"
+  BOARD_NAME = "M5Stack CoreS3 SE"
 
   # SD Card interface mode: "sdmmc" or "spi"
-  SD_MODE = "sdmmc"
+  SD_MODE = "spi"
 
   # SDMMC pins (for Freenove)
-  SD_CLK_PIN = 39
-  SD_CMD_PIN = 38
-  SD_D0_PIN  = 40
+  SD_CLK_PIN = -1
+  SD_CMD_PIN = -1
+  SD_D0_PIN  = -1
 
   # SPI pins (for M5Stack)
-  SD_SCK_PIN  = -1
-  SD_MISO_PIN = -1
-  SD_MOSI_PIN = -1
-  SD_CS_PIN   = -1
+  SD_SCK_PIN  = 36
+  SD_MISO_PIN = 35
+  SD_MOSI_PIN = 37
+  SD_CS_PIN   = 4
 
   # SPI unit for SD card (SPI mode only)
   SD_SPI_UNIT = :ESP32_SPI2_HOST
@@ -122,7 +122,7 @@ def run_script(script_path)
     end
 
     # Execute the script
-    load script_path
+    Kernel.load(script_path)
     puts "Script finished: #{script_path}"
     return true
   rescue => e
@@ -148,13 +148,12 @@ script_to_run = sm.get_autorun_script
 if script_to_run
   # ========== Script Mode ==========
   # Load minimal required gems
-  require 'machine'
+  require 'machine'  # This loads picoruby-machine/mrblib/kernel.rb which defines STDIN/STDOUT
   require "watchdog"
   Watchdog.disable
   require "shell"
 
-  STDIN = IO.new
-  STDOUT = IO.new
+  # STDIN/STDOUT are already defined in kernel.rb, no need to redefine
 
   puts "Script Mode: #{script_to_run}"
 
@@ -174,13 +173,12 @@ if script_to_run
 else
   # ========== UI Mode ==========
   # Perform full initialization only in UI mode
-  require 'machine'
+  require 'machine'  # This loads picoruby-machine/mrblib/kernel.rb which defines STDIN/STDOUT
   require "watchdog"
   Watchdog.disable
   require "shell"
 
-  STDIN = IO.new
-  STDOUT = IO.new
+  # STDIN/STDOUT are already defined in kernel.rb, no need to redefine
 
   puts "Board: #{BoardConfig::BOARD_NAME}"
 
@@ -218,14 +216,7 @@ else
   puts "  restart          - Restart ESP32"
   print "> "
 
-  $loop_count = 0
   loop do
-    $loop_count += 1
-    # Debug: print every 50 iterations (5 seconds)
-    if $loop_count % 50 == 0
-      puts "[Loop #{$loop_count}] Waiting for script..."
-    end
-
     # Check for console input (load command)
     console_script = sm.check_console
     if console_script

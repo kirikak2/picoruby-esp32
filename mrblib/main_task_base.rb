@@ -97,7 +97,7 @@ def run_script(script_path)
     end
 
     # Execute the script
-    load script_path
+    Kernel.load(script_path)
     puts "Script finished: #{script_path}"
     return true
   rescue => e
@@ -123,13 +123,12 @@ script_to_run = sm.get_autorun_script
 if script_to_run
   # ========== Script Mode ==========
   # Load minimal required gems
-  require 'machine'
+  require 'machine'  # This loads picoruby-machine/mrblib/kernel.rb which defines STDIN/STDOUT
   require "watchdog"
   Watchdog.disable
   require "shell"
 
-  STDIN = IO.new
-  STDOUT = IO.new
+  # STDIN/STDOUT are already defined in kernel.rb, no need to redefine
 
   puts "Script Mode: #{script_to_run}"
 
@@ -149,13 +148,12 @@ if script_to_run
 else
   # ========== UI Mode ==========
   # Perform full initialization only in UI mode
-  require 'machine'
+  require 'machine'  # This loads picoruby-machine/mrblib/kernel.rb which defines STDIN/STDOUT
   require "watchdog"
   Watchdog.disable
   require "shell"
 
-  STDIN = IO.new
-  STDOUT = IO.new
+  # STDIN/STDOUT are already defined in kernel.rb, no need to redefine
 
   puts "Board: #{BoardConfig::BOARD_NAME}"
 
@@ -193,14 +191,7 @@ else
   puts "  restart          - Restart ESP32"
   print "> "
 
-  $loop_count = 0
   loop do
-    $loop_count += 1
-    # Debug: print every 50 iterations (5 seconds)
-    if $loop_count % 50 == 0
-      puts "[Loop #{$loop_count}] Waiting for script..."
-    end
-
     # Check for console input (load command)
     console_script = sm.check_console
     if console_script

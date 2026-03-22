@@ -28,6 +28,9 @@ typedef struct picogems {
     bool required;
 } picogems;
 extern picogems prebuilt_gems[];
+
+// Forward declaration for sandbox cleanup
+extern void mrbc_sandbox_cleanup(void);
 #endif
 
 static const char *TAG = "SUPERVISOR";
@@ -294,6 +297,10 @@ static void cleanup_vm(void)
         prebuilt_gems[i].required = false;
     }
     ESP_LOGI(TAG, "Require flags reset");
+
+    // Reset sandbox global state (g_suspend_vm_code)
+    // This is critical because mrbc_cleanup() invalidates the memory that g_suspend_vm_code points to
+    mrbc_sandbox_cleanup();
 
     // Note: mrbc_init_global() will be called automatically in the next mrbc_init()
     // Calling it here would crash because mrbc_cleanup() clears the memory allocator
@@ -768,7 +775,9 @@ static void run_vm_with_main_task(void)
 
     // Initialize require system
     extern void picoruby_init_require(mrbc_vm *vm);
+    ESP_LOGI(TAG, "About to call picoruby_init_require(vm=%p)...", (void*)vm);
     picoruby_init_require(vm);
+    ESP_LOGI(TAG, "picoruby_init_require returned");
 
     // Register ScriptManager class
     register_script_manager_class(vm);
