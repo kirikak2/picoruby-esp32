@@ -97,6 +97,10 @@ def run_script(script_path)
       return true
     end
 
+    # Clear UI pad settings before loading new script
+    require 'ui'
+    UI.pad_clear_all
+
     # Execute the script
     Kernel.load(script_path)
     puts "Script finished: #{script_path}"
