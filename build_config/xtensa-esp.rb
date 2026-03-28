@@ -21,6 +21,8 @@ MRuby::CrossBuild.new("esp32") do |conf|
   conf.cc.defines << "USE_FAT_SD_DISK"
   conf.cc.defines << "ESP32_PLATFORM"
   conf.cc.defines << "NDEBUG"
+  # ESP32-S3 with PSRAM has enough memory for more symbols
+  conf.cc.defines << "MAX_SYMBOLS_COUNT=2048"
 
   conf.picoruby(alloc_libc: false)
   conf.gembox 'minimum'

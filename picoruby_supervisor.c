@@ -878,14 +878,10 @@ static bool run_vm_with_main_task(void)
 
     // Initialize require system
     extern void picoruby_init_require(mrbc_vm *vm);
-    ESP_LOGI(TAG, "About to call picoruby_init_require(vm=%p)...", (void*)vm);
     picoruby_init_require(vm);
-    ESP_LOGI(TAG, "picoruby_init_require returned");
 
     // Register ScriptManager class
     register_script_manager_class(vm);
-
-    ESP_LOGI(TAG, "Running main_task.rb...");
 
     // Run the VM (this blocks until all tasks complete)
     mrbc_run();
