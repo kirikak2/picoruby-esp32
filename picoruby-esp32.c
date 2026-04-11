@@ -12,7 +12,7 @@
 
 static const char *TAG = "PICORUBY";
 
-#if defined(CONFIG_IDF_TARGET_ESP32S3) && defined(CONFIG_SPIRAM)
+#if (defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32P4)) && defined(CONFIG_SPIRAM)
 #include "esp_attr.h"
 #define HEAP_IN_PSRAM 1
 #endif
@@ -27,12 +27,18 @@ static const char *TAG = "PICORUBY";
 extern const uint8_t main_task[];
 
 #ifndef HEAP_SIZE
-#if defined(CONFIG_IDF_TARGET_ESP32S3) && defined(CONFIG_SPIRAM)
+#if defined(CONFIG_IDF_TARGET_ESP32P4) && defined(CONFIG_SPIRAM)
+// ESP32-P4 with PSRAM (Tab5 has 32MB): Use 4MB heap
+#define HEAP_SIZE (1024 * 1024 * 4)
+#elif defined(CONFIG_IDF_TARGET_ESP32S3) && defined(CONFIG_SPIRAM)
 // ESP32-S3 with PSRAM: Use 2MB heap (plenty of room in 8MB PSRAM)
 #define HEAP_SIZE (1024 * 1024 * 2)
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
 // ESP32-S3 without PSRAM: Conservative heap
 #define HEAP_SIZE (1024 * 180)
+#elif defined(CONFIG_IDF_TARGET_ESP32P4)
+// ESP32-P4 without PSRAM: Conservative heap
+#define HEAP_SIZE (1024 * 256)
 #elif defined(CONFIG_IDF_TARGET_ESP32C3)
 #define HEAP_SIZE (1024 * 120)
 #else

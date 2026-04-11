@@ -3,7 +3,7 @@
 
 module BoardConfig
   # Board name
-  BOARD_NAME = "M5Stack CoreS3 SE (USB Serial)"
+  BOARD_NAME = "M5Stack Tab5"
 
   # SD Card interface mode: "sdmmc" or "spi"
   SD_MODE = "spi"
@@ -14,11 +14,23 @@ module BoardConfig
   SD_D0_PIN  = -1
 
   # SPI pins (for M5Stack)
-  SD_SCK_PIN  = 36
-  SD_MISO_PIN = 35
-  SD_MOSI_PIN = 37
-  SD_CS_PIN   = 4
+  SD_SCK_PIN  = 43
+  SD_MISO_PIN = 39
+  SD_MOSI_PIN = 44
+  SD_CS_PIN   = 42
 
   # SPI unit for SD card (SPI mode only)
   SD_SPI_UNIT = :ESP32_SPI2_HOST
+
+  # MIDI Device Configuration
+  # SAM2695 synthesizer pins
+  SAM2695_TX_PIN = 6
+  SAM2695_RX_PIN = 7
+  HAS_SAM2695 = true
+
+  # USB-MIDI Host support
+  HAS_USB_MIDI_HOST = true
+
+  # USB-MIDI Device support (for future implementation)
+  HAS_USB_MIDI_DEVICE = true
 end

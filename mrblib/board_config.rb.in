@@ -21,4 +21,16 @@ module BoardConfig
 
   # SPI unit for SD card (SPI mode only)
   SD_SPI_UNIT = :ESP32_SPI2_HOST
+
+  # MIDI Device Configuration
+  # SAM2695 synthesizer pins
+  SAM2695_TX_PIN = @SAM2695_TX_PIN@
+  SAM2695_RX_PIN = @SAM2695_RX_PIN@
+  HAS_SAM2695 = @HAS_SAM2695@
+
+  # USB-MIDI Host support
+  HAS_USB_MIDI_HOST = @HAS_USB_MIDI_HOST@
+
+  # USB-MIDI Device support (for future implementation)
+  HAS_USB_MIDI_DEVICE = @HAS_USB_MIDI_DEVICE@
 end

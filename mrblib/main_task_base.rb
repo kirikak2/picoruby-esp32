@@ -1,6 +1,65 @@
 # BoardConfig is defined above (concatenated by CMake)
 
 # ============================================================================
+# Global MIDI Devices Module
+# Provides pre-initialized MIDI devices based on board configuration
+# SD card scripts should use these devices instead of creating their own
+# ============================================================================
+
+# Use global variables instead of class instance variables for PicoRuby compatibility
+$midi_sam2695 = nil
+$midi_usb_midi_host = nil
+$midi_sam2695_init_attempted = false
+$midi_usb_midi_host_init_attempted = false
+
+module MIDIDevices
+  def self.sam2695
+    # Lazy initialization
+    if $midi_sam2695.nil? && !$midi_sam2695_init_attempted
+      $midi_sam2695_init_attempted = true
+      init_sam2695
+    end
+    $midi_sam2695
+  end
+
+  def self.usb_midi_host
+    # Lazy initialization
+    if $midi_usb_midi_host.nil? && !$midi_usb_midi_host_init_attempted
+      $midi_usb_midi_host_init_attempted = true
+      init_usb_midi_host
+    end
+    $midi_usb_midi_host
+  end
+
+  def self.init_sam2695
+    if BoardConfig::HAS_SAM2695
+      require 'sam2695'
+      $midi_sam2695 = SAM2695.new(BoardConfig::SAM2695_TX_PIN, BoardConfig::SAM2695_RX_PIN)
+      puts "SAM2695 initialized (TX=#{BoardConfig::SAM2695_TX_PIN}, RX=#{BoardConfig::SAM2695_RX_PIN})"
+    else
+      puts "SAM2695 not available on this board"
+    end
+  end
+
+  def self.init_usb_midi_host
+    if BoardConfig::HAS_USB_MIDI_HOST
+      require 'usb_midi'
+      $midi_usb_midi_host = USB_MIDI.instance
+      puts "USB-MIDI Host initialized"
+    else
+      puts "USB-MIDI Host not available on this board"
+    end
+  end
+
+  def self.cleanup
+    $midi_sam2695 = nil
+    $midi_usb_midi_host = nil
+    $midi_sam2695_init_attempted = false
+    $midi_usb_midi_host_init_attempted = false
+  end
+end
+
+# ============================================================================
 # Function definitions (used in both modes)
 # ============================================================================
 
@@ -148,6 +207,9 @@ if script_to_run
     puts "SD card ready"
   end
 
+  # MIDI devices will be initialized on first access
+  # (lazy initialization to reduce startup power consumption)
+
   run_script(script_to_run)
   puts "Script completed, exiting to supervisor"
   # main_task.rb ends here, supervisor will detect and restart in UI mode
@@ -186,6 +248,9 @@ else
 
   # Always notify C side about scripts (even if SD card failed)
   notify_scripts_to_c
+
+  # MIDI devices will be initialized on first access
+  # (lazy initialization to reduce startup power consumption)
 
   GC.start
 

@@ -36,7 +36,7 @@ extern void mrbc_sandbox_cleanup(void);
 static const char *TAG = "SUPERVISOR";
 
 // Platform-specific includes
-#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL)
+#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
 #include "ui_common.h"
 #endif
 
@@ -87,8 +87,12 @@ extern void initialize_nvs(void);
 extern void picoruby_esp32_midi_cleanup(void);
 
 // Heap size configuration (must match picoruby-esp32.c)
-#if defined(CONFIG_IDF_TARGET_ESP32S3) && defined(CONFIG_SPIRAM)
+#if defined(CONFIG_IDF_TARGET_ESP32P4) && defined(CONFIG_SPIRAM)
+#define HEAP_SIZE (1024 * 1024 * 4)
+#elif defined(CONFIG_IDF_TARGET_ESP32S3) && defined(CONFIG_SPIRAM)
 #define HEAP_SIZE (1024 * 1024 * 2)
+#elif defined(CONFIG_IDF_TARGET_ESP32P4)
+#define HEAP_SIZE (1024 * 256)
 #else
 #define HEAP_SIZE (1024 * 180)
 #endif
@@ -202,7 +206,7 @@ void supervisor_log(const char *format, ...)
     // Always log to serial
     ESP_LOGI(TAG, "%s", buf);
 
-#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL)
+#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
     // Also log to M5Stack UI
     extern void ui_add_log(const char *msg);
     ui_add_log(buf);
@@ -821,7 +825,7 @@ static void c_sm_add_log(mrbc_vm *vm, mrbc_value v[], int argc)
     }
 
     const char *text = (const char *)mrbc_string_cstr(&str);
-#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL)
+#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
     extern void ui_add_log(const char *msg);
     ui_add_log(text);
 #else
