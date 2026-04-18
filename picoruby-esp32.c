@@ -355,6 +355,7 @@ picoruby_esp32_midi_cleanup(void)
 static char g_script_list[PICORUBY_MAX_SCRIPTS][PICORUBY_MAX_SCRIPT_NAME];
 static int g_script_count = 0;
 static volatile bool g_script_list_ready = false;
+static volatile uint32_t g_script_list_version = 0;
 
 // SD card refresh request (from UI to Ruby)
 // Note: Not static, accessible from picoruby_supervisor.c
@@ -408,7 +409,16 @@ void
 picoruby_esp32_set_script_list_ready(bool ready)
 {
   g_script_list_ready = ready;
-  ESP_LOGI(TAG, "Script list ready: %s (%d scripts)", ready ? "yes" : "no", g_script_count);
+  if (ready) {
+    g_script_list_version++;
+  }
+  ESP_LOGI(TAG, "Script list ready: %s (%d scripts, version=%lu)", ready ? "yes" : "no", g_script_count, (unsigned long)g_script_list_version);
+}
+
+uint32_t
+picoruby_esp32_get_script_list_version(void)
+{
+  return g_script_list_version;
 }
 
 void

@@ -127,4 +127,12 @@ void picoruby_esp32_set_script_list_ready(bool ready);
  */
 void picoruby_esp32_request_sd_refresh(void);
 
+/**
+ * @brief Get script list version counter
+ *
+ * Incremented each time the script list is updated (set_ready called with true).
+ * UI can poll this to detect when the list has been refreshed.
+ */
+uint32_t picoruby_esp32_get_script_list_version(void);
+
 #endif // PICORUBY_ESP32_H
