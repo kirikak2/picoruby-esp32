@@ -90,6 +90,21 @@ def notify_scripts_to_c
   sm.set_ready
 end
 
+# Unmount SD card if currently mounted. Used before remounting on refresh
+# so that a physically removed/reinserted card is re-read from scratch
+# (FatFs caches directory entries otherwise).
+def unmount_sd_card
+  idx = VFS.volume_index("/sd")
+  return unless idx
+  begin
+    driver = VFS::VOLUMES[idx][:driver]
+    VFS.unmount(driver, true)
+    puts "SD card unmounted"
+  rescue => e
+    puts "SD unmount error: #{e.message}"
+  end
+end
+
 # SD card initialization function (can be called at startup and on refresh)
 def try_init_sd_card
   return false if BoardConfig::SD_MODE == "none"
@@ -291,18 +306,16 @@ else
     if sm.sd_refresh_requested?
       puts "[UI] SD refresh requested"
       sm.clear_sd_refresh
-      if !$sd_available
-        $sd_available = try_init_sd_card
-        if $sd_available
-          notify_scripts_to_c
-          puts "SD card re-initialized successfully"
-        else
-          puts "SD card still not available"
-        end
-      else
-        # Already available, just re-scan scripts
+      # Always unmount/remount so a physically swapped card is re-read.
+      # FatFs otherwise serves a cached directory listing.
+      unmount_sd_card
+      $sd_available = try_init_sd_card
+      if $sd_available
         notify_scripts_to_c
-        puts "Scripts re-scanned"
+        puts "SD card re-initialized successfully"
+      else
+        puts "SD card not available"
+        notify_scripts_to_c  # still notify so UI can clear its list
       end
     end
 
