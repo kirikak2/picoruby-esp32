@@ -163,8 +163,12 @@ if(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
   set(SD_CMD_PIN -1)
   set(SD_D0_PIN -1)
   # MIDI devices
-  set(SAM2695_TX_PIN 6)
-  set(SAM2695_RX_PIN 7)
+  # Tab5: SAM2695 is connected via Port A (UART)
+  #   Port A pin1 (SCL) = GPIO 54 -> RX
+  #   Port A pin2 (SDA) = GPIO 53 -> TX
+  # NOTE: GPIO 31/32 are Tab5's INTERNAL I2C (IO expanders), do NOT use.
+  set(SAM2695_TX_PIN 53)
+  set(SAM2695_RX_PIN 54)
   set(HAS_SAM2695 true)
   set(HAS_USB_MIDI_HOST true)
   set(HAS_USB_MIDI_DEVICE true)  # Future implementation

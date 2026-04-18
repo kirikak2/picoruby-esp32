@@ -24,8 +24,8 @@ module BoardConfig
 
   # MIDI Device Configuration
   # SAM2695 synthesizer pins
-  SAM2695_TX_PIN = 6
-  SAM2695_RX_PIN = 7
+  SAM2695_TX_PIN = 53
+  SAM2695_RX_PIN = 54
   HAS_SAM2695 = true
 
   # USB-MIDI Host support
