@@ -53,6 +53,7 @@ MRuby::CrossBuild.new("esp32") do |conf|
 
   # MIDI
   conf.gem core: 'picoruby-usb_midi_host'
+  conf.gem core: 'picoruby-uart_midi'
   conf.gem core: 'picoruby-sam2695'
   conf.gem core: 'picoruby-midi'
   conf.gem core: 'picoruby-midi-mml'
