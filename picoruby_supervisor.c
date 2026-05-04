@@ -15,6 +15,7 @@
 
 #include "picoruby_supervisor.h"
 #include "picoruby-esp32.h"
+#include "midi.h"  /* for MIDI_set_stop_check / MIDI_set_cleanup_hook */
 
 // For mrubyc
 #if defined(PICORB_VM_MRUBYC)
@@ -116,6 +117,12 @@ void supervisor_init(void)
         ESP_LOGE(TAG, "Failed to create FreeRTOS primitives");
         return;
     }
+
+    // Wire picoruby-midi's cooperative-stop hooks to the supervisor's
+    // script-stop flag and to the all-notes-off cleanup helper, so the
+    // gem itself stays free of picoruby-esp32 symbols.
+    MIDI_set_stop_check(picoruby_esp32_stop_requested);
+    MIDI_set_cleanup_hook(picoruby_esp32_midi_cleanup);
 
     // Initialize NVS (needed for some operations)
     initialize_nvs();
