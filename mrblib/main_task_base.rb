@@ -43,8 +43,8 @@ module MIDIDevices
 
   def self.init_usb_midi_host
     if BoardConfig::HAS_USB_MIDI_HOST
-      require 'usb_midi'
-      $midi_usb_midi_host = USB_MIDI.instance
+      require 'usb_midi_host'
+      $midi_usb_midi_host = USB_MIDI_HOST.instance
       puts "USB-MIDI Host initialized"
     else
       puts "USB-MIDI Host not available on this board"

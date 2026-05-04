@@ -69,7 +69,7 @@ idf_component_register(
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-i2c/ports/esp32/i2c.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-uart/ports/esp32/uart.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-sdmmc/src/sdmmc.c
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi/ports/esp32/usb_midi.c
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_host/ports/esp32/usb_midi_host.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-sam2695/ports/esp32/sam2695.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-midi/ports/esp32/midi.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-ui/ports/esp32/ui.c
@@ -86,7 +86,7 @@ idf_component_register(
     ${COMPONENT_DIR}/picoruby/mrbgems/mruby-compiler2/include
     ${COMPONENT_DIR}/picoruby/mrbgems/mruby-compiler2/lib/prism/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-sdmmc/include
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi/include
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_host/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-sam2695/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-midi/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-ui/include

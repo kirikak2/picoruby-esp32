@@ -328,7 +328,7 @@ picoruby_esp32_midi_cleanup(void)
   ESP_LOGI(TAG, "Performing MIDI cleanup...");
 
   // Declare external functions
-  extern int USB_MIDI_send_packet(uint8_t cable, uint8_t cin, uint8_t midi1, uint8_t midi2, uint8_t midi3);
+  extern int USB_MIDI_HOST_send_packet(uint8_t cable, uint8_t cin, uint8_t midi1, uint8_t midi2, uint8_t midi3);
   extern int SAM2695_send_packet(uint8_t cable, uint8_t cin, uint8_t midi1, uint8_t midi2, uint8_t midi3);
 
   // Send cleanup messages to all MIDI channels (0-15)
@@ -336,16 +336,16 @@ picoruby_esp32_midi_cleanup(void)
     uint8_t status_cc = 0xB0 | ch;  // Control Change
 
     // All Sound Off (CC #120)
-    USB_MIDI_send_packet(0, 0x0B, status_cc, 120, 0);
+    USB_MIDI_HOST_send_packet(0, 0x0B, status_cc, 120, 0);
     SAM2695_send_packet(0, 0x0B, status_cc, 120, 0);
 
     // All Notes Off (CC #123)
-    USB_MIDI_send_packet(0, 0x0B, status_cc, 123, 0);
+    USB_MIDI_HOST_send_packet(0, 0x0B, status_cc, 123, 0);
     SAM2695_send_packet(0, 0x0B, status_cc, 123, 0);
   }
 
   // Send MIDI Stop (0xFC)
-  USB_MIDI_send_packet(0, 0x05, 0xFC, 0, 0);  // CIN 0x05 for single-byte system common
+  USB_MIDI_HOST_send_packet(0, 0x05, 0xFC, 0, 0);  // CIN 0x05 for single-byte system common
   SAM2695_send_packet(0, 0x05, 0xFC, 0, 0);
 
   ESP_LOGI(TAG, "MIDI cleanup completed");
