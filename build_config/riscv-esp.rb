@@ -56,6 +56,7 @@ MRuby::CrossBuild.new("esp32") do |conf|
   conf.gem core: 'picoruby-usb_midi'
   conf.gem core: 'picoruby-sam2695'
   conf.gem core: 'picoruby-midi'
+  conf.gem core: 'picoruby-midi-mml'
 
   # UI (M5Stack)
   conf.gem core: 'picoruby-ui'
