@@ -60,6 +60,52 @@ module MIDIDevices
 end
 
 # ============================================================================
+# Wrap MIDI.start! to inject midori-side concerns
+# ============================================================================
+#
+# picoruby-midi's MIDI.start! is intentionally free of application-layer
+# concerns: no UI.process tick, no ScriptManager stop check. We add both
+# here so SD-card scripts can write a plain MIDI.start! call and still
+# get UI redraw and graceful script-switch behavior. Pattern:
+#
+#   MIDI.start! bpm: 120, output: dev do |c|
+#     player.tick(c)
+#   end
+#
+# Internally:
+#   - Wrapper-injected block runs before the user block on every yield.
+#   - When ScriptManager#stop_requested? becomes true, the block `break`s
+#     out of MIDI.start!'s loop, letting its `ensure` send MIDI Stop and
+#     then control returns to the script-switch driver.
+#
+# Note: require 'midi' here is essential. picoruby's C bindings define
+# the MIDI module shell at VM init, but the Ruby-side methods (including
+# start!) are defined by the gem's mrblib only when the gem is required.
+# Without this require, alias_method below sees an undefined start!.
+require 'midi'
+module MIDI
+  class << self
+    alias_method :_original_start!, :start!
+
+    def start!(bpm: 120, output: nil, sync: nil, subdivisions: 24, &user_block)
+      sm = begin
+             ScriptManager.new
+           rescue
+             nil
+           end
+      _original_start!(bpm: bpm, output: output, sync: sync,
+                       subdivisions: subdivisions) do |c|
+        if sm && sm.stop_requested?
+          break
+        end
+        UI.process
+        user_block.call(c) if user_block
+      end
+    end
+  end
+end
+
+# ============================================================================
 # Function definitions (used in both modes)
 # ============================================================================
 
