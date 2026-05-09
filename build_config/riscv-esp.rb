@@ -62,6 +62,6 @@ MRuby::CrossBuild.new("esp32") do |conf|
   conf.gem core: 'picoruby-midi'
   conf.gem core: 'picoruby-midi-mml'
 
-  # UI (M5Stack)
-  conf.gem core: 'picoruby-ui'
+  # UI (M5Stack) — midori-specific gem, lives outside the picoruby submodule.
+  conf.gem File.expand_path('../../../mrbgems/picoruby-ui', __dir__)
 end

@@ -74,7 +74,7 @@ idf_component_register(
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_host/ports/esp32/usb_host_driver.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-uart_midi/ports/esp32/uart_midi.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-midi/ports/esp32/midi.c
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-ui/ports/esp32/ui.c
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-ui/ports/esp32/ui.c
   INCLUDE_DIRS
     ${COMPONENT_DIR}
     ${COMPONENT_DIR}/picoruby/include
@@ -91,7 +91,7 @@ idf_component_register(
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_host/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-uart_midi/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-midi/include
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-ui/include
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-ui/include
     ${CMAKE_SOURCE_DIR}/main/ui
     ${ADDITIONAL_INCLUDE_DIRS}
   PRIV_REQUIRES
