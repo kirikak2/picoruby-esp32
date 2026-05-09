@@ -293,6 +293,14 @@ picoruby_esp32_request_script_change(const char *script_path)
   g_current_script[sizeof(g_current_script) - 1] = '\0';
 
   ESP_LOGI(TAG, "Script change requested: %s", script_path);
+
+  /* Bridge to the new supervisor API. The legacy flow expected the
+   * Ruby UI loop to poll `sm.get_requested` and call `sm.request_script`,
+   * but the supervisor only watches its own flag. Mirror the request
+   * here so a UI-side call is honored even if the Ruby loop is stuck. */
+  extern void supervisor_ruby_request_script(const char *script_path);
+  supervisor_ruby_request_script(script_path);
+
   return true;
 }
 
