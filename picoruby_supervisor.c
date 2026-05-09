@@ -30,7 +30,8 @@ typedef struct picogems {
 } picogems;
 extern picogems prebuilt_gems[];
 
-// Forward declaration for sandbox cleanup
+// Forward declaration for sandbox cleanup (added by selfbuild's
+// "Fix Illegal bytecode error after mrbc_cleanup()" patch)
 extern void mrbc_sandbox_cleanup(void);
 #endif
 
@@ -352,8 +353,10 @@ static void cleanup_vm(void)
     }
     ESP_LOGI(TAG, "Require flags reset");
 
-    // Reset sandbox global state (g_suspend_vm_code)
-    // This is critical because mrbc_cleanup() invalidates the memory that g_suspend_vm_code points to
+    // Reset sandbox global state (g_suspend_vm_code).
+    // Required because mrbc_cleanup() invalidates the memory that
+    // g_suspend_vm_code points to. Provided by the cherry-picked
+    // "Fix Illegal bytecode error after mrbc_cleanup()" patch.
     mrbc_sandbox_cleanup();
 
     // Note: mrbc_init_global() will be called automatically in the next mrbc_init()

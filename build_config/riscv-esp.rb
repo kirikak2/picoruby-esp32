@@ -26,7 +26,11 @@ MRuby::CrossBuild.new("esp32") do |conf|
   # ESP32-P4 with PSRAM has enough memory for more symbols
   conf.cc.defines << "MAX_SYMBOLS_COUNT=2048"
 
-  conf.picoruby(alloc_libc: false)
+  conf.femtoruby(alloc_libc: false)
+  # Pull in FAT BEFORE the gemboxes so that gembox-time conditionals
+  # (`if gems.any? { picoruby-filesystem-fat }`) see it and skip pulling
+  # picoruby-littlefs as a dependency.
+  conf.gem core: 'picoruby-filesystem-fat'
   conf.gembox 'minimum'
   conf.gembox 'core'
   conf.gembox 'shell'
@@ -49,7 +53,6 @@ MRuby::CrossBuild.new("esp32") do |conf|
   conf.gem core: 'picoruby-rmt'
   conf.gem core: 'picoruby-mbedtls'
   conf.gem core: 'picoruby-socket'
-  conf.gem core: 'picoruby-mqtt'
   conf.gem core: 'picoruby-adafruit_sk6812'
 
   # MIDI
