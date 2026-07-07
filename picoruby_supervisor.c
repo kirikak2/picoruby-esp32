@@ -344,6 +344,16 @@ static void cleanup_vm(void)
 {
 #if defined(PICORB_VM_MRUBYC)
     ESP_LOGI(TAG, "Cleaning up VM...");
+
+    // Drop stale FatFs volume pointers BEFORE wiping the VM heap. The FATFS
+    // objects registered in FatFs[] live in the mruby/c heap; mrbc_cleanup()
+    // reclaims that memory, so the static FatFs[] table would otherwise hold
+    // dangling pointers. The next f_mount() dereferences FatFs[vol]
+    // (cfs->fs_type = 0), writing into whatever now occupies the old address
+    // and corrupting the heap -- later seen as a hang in
+    // mrbc_raw_alloc_no_free()'s physical-block walk over a zero-size block.
+    { extern void ff_clear_volumes(void); ff_clear_volumes(); }
+
     mrbc_cleanup();
 
     // Reset require flags so gems can be re-required in the next VM instance
