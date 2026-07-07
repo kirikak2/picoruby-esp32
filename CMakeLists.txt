@@ -72,6 +72,8 @@ idf_component_register(
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-sdmmc/src/sdmmc.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_host/ports/esp32/usb_midi_host.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_host/ports/esp32/usb_host_driver.c
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_device/ports/esp32/usb_midi_device.c
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_device/ports/esp32/usb_descriptors.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-uart_midi/ports/esp32/uart_midi.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-midi/ports/esp32/midi.c
     ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-ui/ports/esp32/ui.c
@@ -89,6 +91,7 @@ idf_component_register(
     ${COMPONENT_DIR}/picoruby/mrbgems/mruby-compiler2/lib/prism/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-sdmmc/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_host/include
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_device/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-uart_midi/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-midi/include
     ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-ui/include
@@ -109,6 +112,7 @@ idf_component_register(
     nvs_flash
     esp_wifi
     usb
+    esp_tinyusb
 )
 
 add_definitions(
@@ -174,7 +178,7 @@ if(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
   set(SAM2695_RX_PIN 54)
   set(HAS_SAM2695 true)
   set(HAS_USB_MIDI_HOST true)
-  set(HAS_USB_MIDI_DEVICE true)  # Future implementation
+  set(HAS_USB_MIDI_DEVICE true)   # Tab5: USB-C acts as USB-MIDI device (TinyUSB)
 elseif(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3 OR CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL)
   if(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL)
     set(BOARD_NAME "M5Stack CoreS3 SE (USB Serial)")

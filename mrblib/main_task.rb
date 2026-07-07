@@ -46,8 +46,10 @@ end
 # Use global variables instead of class instance variables for PicoRuby compatibility
 $midi_sam2695 = nil
 $midi_usb_midi_host = nil
+$midi_usb_midi_device = nil
 $midi_sam2695_init_attempted = false
 $midi_usb_midi_host_init_attempted = false
+$midi_usb_midi_device_init_attempted = false
 
 module MIDIDevices
   def self.sam2695
@@ -66,6 +68,15 @@ module MIDIDevices
       init_usb_midi_host
     end
     $midi_usb_midi_host
+  end
+
+  def self.usb_midi_device
+    # Lazy initialization
+    if $midi_usb_midi_device.nil? && !$midi_usb_midi_device_init_attempted
+      $midi_usb_midi_device_init_attempted = true
+      init_usb_midi_device
+    end
+    $midi_usb_midi_device
   end
 
   def self.init_sam2695
@@ -88,11 +99,23 @@ module MIDIDevices
     end
   end
 
+  def self.init_usb_midi_device
+    if BoardConfig::HAS_USB_MIDI_DEVICE
+      require 'usb_midi_device'
+      $midi_usb_midi_device = USB_MIDI_DEVICE.instance
+      puts "USB-MIDI Device initialized"
+    else
+      puts "USB-MIDI Device not available on this board"
+    end
+  end
+
   def self.cleanup
     $midi_sam2695 = nil
     $midi_usb_midi_host = nil
+    $midi_usb_midi_device = nil
     $midi_sam2695_init_attempted = false
     $midi_usb_midi_host_init_attempted = false
+    $midi_usb_midi_device_init_attempted = false
   end
 end
 
