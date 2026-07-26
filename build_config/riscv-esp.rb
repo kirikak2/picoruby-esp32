@@ -65,4 +65,7 @@ MRuby::CrossBuild.new("esp32") do |conf|
 
   # UI (M5Stack) — midori-specific gem, lives outside the picoruby submodule.
   conf.gem File.expand_path('../../../mrbgems/picoruby-ui', __dir__)
+
+  # DFRobot Visual Rotary Encoder (SEN0502) — pure Ruby on top of picoruby-i2c.
+  conf.gem File.expand_path('../../../mrbgems/picoruby-dfrobot_rotary_encoder', __dir__)
 end
