@@ -55,13 +55,13 @@ MRuby::CrossBuild.new("esp32") do |conf|
   conf.gem core: 'picoruby-socket'
   conf.gem core: 'picoruby-adafruit_sk6812'
 
-  # MIDI
-  conf.gem core: 'picoruby-usb_midi_host'
-  conf.gem core: 'picoruby-usb_midi_device'
-  conf.gem core: 'picoruby-uart_midi'
-  conf.gem core: 'picoruby-sam2695'
-  conf.gem core: 'picoruby-midi'
-  conf.gem core: 'picoruby-midi-mml'
+  # MIDI — midori-specific gems, live outside the picoruby submodule.
+  conf.gem File.expand_path('../../../mrbgems/picoruby-usb_midi_host', __dir__)
+  conf.gem File.expand_path('../../../mrbgems/picoruby-usb_midi_device', __dir__)
+  conf.gem File.expand_path('../../../mrbgems/picoruby-uart_midi', __dir__)
+  conf.gem File.expand_path('../../../mrbgems/picoruby-sam2695', __dir__)
+  conf.gem File.expand_path('../../../mrbgems/picoruby-midi', __dir__)
+  conf.gem File.expand_path('../../../mrbgems/picoruby-midi-mml', __dir__)
 
   # UI (M5Stack) — midori-specific gem, lives outside the picoruby submodule.
   conf.gem File.expand_path('../../../mrbgems/picoruby-ui', __dir__)

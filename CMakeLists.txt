@@ -70,12 +70,12 @@ idf_component_register(
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-i2c/ports/esp32/i2c.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-uart/ports/esp32/uart.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-sdmmc/src/sdmmc.c
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_host/ports/esp32/usb_midi_host.c
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_host/ports/esp32/usb_host_driver.c
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_device/ports/esp32/usb_midi_device.c
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_device/ports/esp32/usb_descriptors.c
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-uart_midi/ports/esp32/uart_midi.c
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-midi/ports/esp32/midi.c
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-usb_midi_host/ports/esp32/usb_midi_host.c
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-usb_midi_host/ports/esp32/usb_host_driver.c
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-usb_midi_device/ports/esp32/usb_midi_device.c
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-usb_midi_device/ports/esp32/usb_descriptors.c
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-uart_midi/ports/esp32/uart_midi.c
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-midi/ports/esp32/midi.c
     ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-ui/ports/esp32/ui.c
   INCLUDE_DIRS
     ${COMPONENT_DIR}
@@ -90,10 +90,10 @@ idf_component_register(
     ${COMPONENT_DIR}/picoruby/mrbgems/mruby-compiler2/include
     ${COMPONENT_DIR}/picoruby/mrbgems/mruby-compiler2/lib/prism/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-sdmmc/include
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_host/include
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-usb_midi_device/include
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-uart_midi/include
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-midi/include
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-usb_midi_host/include
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-usb_midi_device/include
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-uart_midi/include
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-midi/include
     ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-ui/include
     ${CMAKE_SOURCE_DIR}/main/ui
     ${ADDITIONAL_INCLUDE_DIRS}
