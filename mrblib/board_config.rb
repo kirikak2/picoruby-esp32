@@ -3,7 +3,7 @@
 
 module BoardConfig
   # Board name
-  BOARD_NAME = "M5Stack Tab5"
+  BOARD_NAME = "M5Stack Tab5 (USB-MIDI device)"
 
   # SD Card interface mode: "sdmmc" or "spi"
   SD_MODE = "spi"

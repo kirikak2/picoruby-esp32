@@ -156,9 +156,34 @@ add_custom_target(
 add_dependencies(${COMPONENT_LIB} ${CUSTOM_TARGET_NAME})
 
 # Generate board_config.rb from template based on Kconfig settings
+#
+# USB roles are derived from the "USB port mode" choice (see
+# main/Kconfig.projbuild):
+#   host          -> USB-OTG host, no USB device role
+#   serial        -> USB-Serial/JTAG console (device)
+#   midi_device   -> TinyUSB CDC + MIDI composite device
+# On the single-port ESP32-S3 boards the host and the device roles are
+# mutually exclusive, which CONFIG_USB_MIDI_HOST_ENABLED already encodes.
+if(CONFIG_USB_MIDI_HOST_ENABLED)
+  set(HAS_USB_MIDI_HOST true)
+else()
+  set(HAS_USB_MIDI_HOST false)
+endif()
+
+if(CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE)
+  set(HAS_USB_MIDI_DEVICE true)
+  set(USB_MODE_NAME "USB-MIDI device")
+elseif(CONFIG_USB_MIDI_USB_MODE_SERIAL)
+  set(HAS_USB_MIDI_DEVICE false)
+  set(USB_MODE_NAME "USB serial")
+else()
+  set(HAS_USB_MIDI_DEVICE false)
+  set(USB_MODE_NAME "USB-MIDI host")
+endif()
+
 if(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
   # M5Stack Tab5 - ESP32-P4 with SPI SD card
-  set(BOARD_NAME "M5Stack Tab5")
+  set(BOARD_NAME "M5Stack Tab5 (${USB_MODE_NAME})")
   set(SD_MODE "spi")
   # SPI pins for Tab5 (ESP32-P4)
   set(SD_SCK_PIN 43)
@@ -177,18 +202,8 @@ if(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
   set(SAM2695_TX_PIN 53)
   set(SAM2695_RX_PIN 54)
   set(HAS_SAM2695 true)
-  set(HAS_USB_MIDI_HOST true)
-  set(HAS_USB_MIDI_DEVICE true)   # Tab5: USB-C acts as USB-MIDI device (TinyUSB)
-elseif(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3 OR CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL)
-  if(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3_USB_SERIAL)
-    set(BOARD_NAME "M5Stack CoreS3 SE (USB Serial)")
-    # USB Serial mode - no USB-MIDI Host
-    set(HAS_USB_MIDI_HOST false)
-  else()
-    set(BOARD_NAME "M5Stack CoreS3 SE")
-    # Standard mode - has USB-MIDI Host
-    set(HAS_USB_MIDI_HOST true)
-  endif()
+elseif(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3)
+  set(BOARD_NAME "M5Stack CoreS3 SE (${USB_MODE_NAME})")
   set(SD_MODE "spi")
   # SPI pins for M5Stack
   set(SD_SCK_PIN 36)
@@ -203,10 +218,9 @@ elseif(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3 OR CONFIG_USB_MIDI_BOARD_M5STACK_COR
   set(SAM2695_TX_PIN 17)
   set(SAM2695_RX_PIN 18)
   set(HAS_SAM2695 true)
-  set(HAS_USB_MIDI_DEVICE false)
 else()
   # Default to Freenove - SDMMC mode (requires PSRAM disabled to avoid GPIO conflict)
-  set(BOARD_NAME "Freenove ESP32-S3")
+  set(BOARD_NAME "Freenove ESP32-S3 (${USB_MODE_NAME})")
   set(SD_MODE "sdmmc")
   # SDMMC pins for Freenove (from official documentation)
   set(SD_CLK_PIN 39)
@@ -221,8 +235,6 @@ else()
   set(SAM2695_TX_PIN 17)
   set(SAM2695_RX_PIN 18)
   set(HAS_SAM2695 true)
-  set(HAS_USB_MIDI_HOST true)
-  set(HAS_USB_MIDI_DEVICE false)
 endif()
 
 configure_file(
