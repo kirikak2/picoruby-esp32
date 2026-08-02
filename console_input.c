@@ -56,6 +56,7 @@
 #include "sdkconfig.h"
 
 #include "console_input.h"
+#include "picoruby_supervisor.h"
 
 #if CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE
 #include "usb_midi_device.h"
@@ -128,6 +129,7 @@ static void console_help(void)
 {
     printf("Commands:\n");
     printf("  load /sd/app.rb  - Load and run a script\n");
+    printf("  stop             - Stop the running script (back to UI mode)\n");
     printf("  heap             - Show free heap memory\n");
     printf("  restart          - Restart ESP32\n");
     fflush(stdout);
@@ -321,6 +323,19 @@ static void console_execute(const char *line)
         }
         ESP_LOGI(TAG, "Console: load %s", path);
         console_queue_script(path);
+        return;
+    }
+
+    /* Unlike "load", this one is handled entirely in C: while a script is
+     * running the Ruby side never polls the command queue, so a queued
+     * command would sit there until the script ended by itself. */
+    if (strcmp(line, "stop") == 0) {
+        if (supervisor_stop_script()) {
+            printf("Stopping script...\n");
+        } else {
+            printf("No script running\n");
+        }
+        fflush(stdout);
         return;
     }
 

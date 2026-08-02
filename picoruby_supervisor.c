@@ -168,7 +168,7 @@ bool supervisor_request_script(const char *script_path)
 
 bool supervisor_stop_script(void)
 {
-    if (!s_cmd_queue) {
+    if (!s_cmd_queue || !supervisor_is_script_running()) {
         return false;
     }
 
@@ -179,9 +179,13 @@ bool supervisor_stop_script(void)
     return xQueueSend(s_cmd_queue, &cmd, pdMS_TO_TICKS(100)) == pdPASS;
 }
 
+/*
+ * A PicoRuby task always exists (UI mode runs one too), so "running" means
+ * the task was started with a script path rather than for the UI loop.
+ */
 bool supervisor_is_script_running(void)
 {
-    return s_state == SUPERVISOR_STATE_RUNNING;
+    return s_state == SUPERVISOR_STATE_RUNNING && s_current_script[0] != '\0';
 }
 
 supervisor_state_t supervisor_get_state(void)
@@ -308,6 +312,56 @@ static bool build_error_message(const mrbc_vm *vm, char *buf, size_t bufsize)
 }
 #endif
 
+/*
+ * Delete the finished PicoRuby task.
+ *
+ * picoruby_runner_task() signals the supervisor and then suspends itself,
+ * expecting to be deleted here; without this the 16KB stack of every task
+ * we start would leak, which adds up quickly now that scripts can be
+ * started and stopped from the UI.
+ */
+static void reap_picoruby_task(void)
+{
+    if (s_picoruby_task == NULL) {
+        return;
+    }
+
+    TaskHandle_t task = s_picoruby_task;
+    s_picoruby_task = NULL;
+    vTaskDelete(task);
+}
+
+/*
+ * Drop any pending stop/script-change request.
+ *
+ * Must be done before starting the next task: g_stop_requested stays set
+ * after a stop, and a fresh script polling ScriptManager#stop_requested?
+ * (as MIDI.bpm_loop does) would otherwise exit on its very first
+ * iteration.
+ */
+static void clear_script_request_flags(void)
+{
+    extern void picoruby_esp32_clear_stop_flag(void);
+    extern char g_requested_script[];
+
+    picoruby_esp32_clear_stop_flag();
+    g_requested_script[0] = '\0';
+}
+
+/*
+ * Reset the UI state a script leaves behind. Pads keep their labels and
+ * colours in C, and pad presses queue up for a VM that no longer exists.
+ */
+static void reset_ui_state(void)
+{
+#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
+    extern void ui_pad_clear_all(void);
+    extern void ui_event_init(void);
+    ui_pad_clear_all();
+    ui_event_init();
+#endif
+}
+
 static void stop_picoruby_task(void)
 {
     if (s_picoruby_task == NULL) {
@@ -331,14 +385,11 @@ static void stop_picoruby_task(void)
     );
 
     if (!(bits & (EVT_TASK_COMPLETED | EVT_TASK_ERROR))) {
-        // Timeout - force delete
+        // Timeout - the script never polled stop_requested?, kill it
         ESP_LOGW(TAG, "Task stop timeout, forcing deletion");
-        if (s_picoruby_task != NULL) {
-            vTaskDelete(s_picoruby_task);
-        }
     }
 
-    s_picoruby_task = NULL;
+    reap_picoruby_task();
     ESP_LOGI(TAG, "PicoRuby task stopped");
 }
 
@@ -443,18 +494,28 @@ static void supervisor_task(void *arg)
                     vTaskDelay(pdMS_TO_TICKS(50));  // Allow MIDI messages to be sent
                     // Cleanup and reinitialize VM
                     cleanup_vm();
+                    reset_ui_state();
+                    clear_script_request_flags();
                     // Start new task
                     start_picoruby_task(cmd.script_path);
                     break;
 
                 case CMD_STOP_SCRIPT:
                     ESP_LOGI(TAG, "Command: Stop script");
-                    if (s_picoruby_task != NULL) {
+                    // s_current_script is empty in UI mode, where the running
+                    // task is the UI loop itself and there is nothing to stop.
+                    if (s_picoruby_task != NULL && s_current_script[0] != '\0') {
+                        supervisor_log("[Script] Stopped: %s", s_current_script);
                         stop_picoruby_task();
                         picoruby_esp32_midi_cleanup();
+                        vTaskDelay(pdMS_TO_TICKS(50));  // Allow MIDI messages to be sent
                         cleanup_vm();
+                        reset_ui_state();
+                        clear_script_request_flags();
                         // Return to UI mode
                         start_picoruby_task(NULL);
+                    } else {
+                        ESP_LOGI(TAG, "No script running, nothing to stop");
                     }
                     break;
 
@@ -464,7 +525,10 @@ static void supervisor_task(void *arg)
                         stop_picoruby_task();
                     }
                     picoruby_esp32_midi_cleanup();
+                    vTaskDelay(pdMS_TO_TICKS(50));
                     cleanup_vm();
+                    reset_ui_state();
+                    clear_script_request_flags();
                     start_picoruby_task(NULL);
                     break;
             }
@@ -498,11 +562,13 @@ static void supervisor_task(void *arg)
                 picoruby_esp32_midi_cleanup();
                 vTaskDelay(pdMS_TO_TICKS(50));
 
-                // Cleanup old task handle
-                s_picoruby_task = NULL;
+                // Delete the finished task (it suspended itself)
+                reap_picoruby_task();
 
                 // Cleanup VM
                 cleanup_vm();
+                reset_ui_state();
+                clear_script_request_flags();
 
                 // Start new task
                 start_picoruby_task(next_script[0] ? next_script : NULL);
@@ -513,6 +579,8 @@ static void supervisor_task(void *arg)
                 stop_picoruby_task();
                 picoruby_esp32_midi_cleanup();
                 cleanup_vm();
+                reset_ui_state();
+                clear_script_request_flags();
                 start_picoruby_task(NULL);
             }
         }
@@ -527,7 +595,7 @@ static void supervisor_task(void *arg)
         );
 
         if ((bits & (EVT_TASK_COMPLETED | EVT_TASK_ERROR)) && !s_ruby_script_requested) {
-            s_picoruby_task = NULL;
+            reap_picoruby_task();
 
             // Log the result
             if (bits & EVT_TASK_ERROR) {
@@ -560,11 +628,14 @@ static void supervisor_task(void *arg)
 
                 // Cleanup VM and start the requested script
                 cleanup_vm();
+                reset_ui_state();
                 start_picoruby_task(next_script);
             } else {
                 // No pending request, return to UI mode
                 ESP_LOGI(TAG, "Script ended, returning to UI mode");
                 cleanup_vm();
+                reset_ui_state();
+                clear_script_request_flags();
                 start_picoruby_task(NULL);
             }
         }
