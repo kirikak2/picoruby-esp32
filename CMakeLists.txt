@@ -40,6 +40,7 @@ idf_component_register(
   SRCS
     ${COMPONENT_DIR}/picoruby-esp32.c
     ${COMPONENT_DIR}/picoruby_supervisor.c
+    ${COMPONENT_DIR}/console_input.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-require/ports/esp32/platform.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-esp32/ports/esp32.c
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-machine/ports/esp32/machine.c

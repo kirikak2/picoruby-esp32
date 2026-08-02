@@ -15,6 +15,7 @@
 
 #include "picoruby_supervisor.h"
 #include "picoruby-esp32.h"
+#include "console_input.h"
 #include "midi.h"  /* for MIDI_set_stop_check / MIDI_set_cleanup_hook */
 
 // For mrubyc
@@ -692,79 +693,25 @@ static void c_sm_stop_requested(mrbc_vm *vm, mrbc_value v[], int argc)
     }
 }
 
+/*
+ * Pick up a script path typed on the serial console.
+ *
+ * Reading the link, echoing and line editing all happen in the console
+ * task (console_input.c) so nothing is lost between these polls; this
+ * method only dequeues a completed "load <path>" command. The actual load
+ * stays on the Ruby side because only PicoRuby's VFS can reach /sd.
+ */
 static void c_sm_check_console(mrbc_vm *vm, mrbc_value v[], int argc)
 {
     (void)v; (void)argc;
 
-    // Console buffer (local to this function for simplicity)
-    static char console_buffer[256];
-    static int console_pos = 0;
-
-    int c = getchar();
-    if (c == EOF || c < 0) {
-        SET_NIL_RETURN();
+    char script_path[128];
+    if (console_input_pop_command(script_path, sizeof(script_path))) {
+        mrbc_value str = mrbc_string_new_cstr(vm, script_path);
+        SET_RETURN(str);
         return;
     }
 
-    // Handle backspace
-    if (c == 0x08 || c == 0x7F) {
-        if (console_pos > 0) {
-            console_pos--;
-            printf("\b \b");
-            fflush(stdout);
-        }
-        SET_NIL_RETURN();
-        return;
-    }
-
-    // Handle newline
-    if (c == '\n' || c == '\r') {
-        printf("\n");
-        fflush(stdout);
-
-        console_buffer[console_pos] = '\0';
-
-        // Check for "load" command
-        if (console_pos > 5 && strncmp(console_buffer, "load ", 5) == 0) {
-            char *script_path = console_buffer + 5;
-            while (*script_path == ' ') script_path++;
-
-            if (*script_path != '\0') {
-                ESP_LOGI(TAG, "Console: load %s", script_path);
-                mrbc_value str = mrbc_string_new_cstr(vm, script_path);
-                console_pos = 0;
-                SET_RETURN(str);
-                return;
-            }
-        } else if (strcmp(console_buffer, "heap") == 0) {
-            size_t free_heap = esp_get_free_heap_size();
-            printf("Free heap: %zu bytes\n", free_heap);
-            fflush(stdout);
-        } else if (strcmp(console_buffer, "restart") == 0) {
-            printf("Restarting ESP32...\n");
-            fflush(stdout);
-            vTaskDelay(pdMS_TO_TICKS(100));
-            extern void esp_restart(void);
-            esp_restart();
-        } else if (console_pos > 0) {
-            printf("Unknown command: %s\n", console_buffer);
-            printf("Commands: load /sd/app.rb, heap, restart\n");
-            fflush(stdout);
-        }
-
-        console_pos = 0;
-        printf("> ");
-        fflush(stdout);
-        SET_NIL_RETURN();
-        return;
-    }
-
-    // Handle printable characters
-    if (c >= 32 && c < 127 && console_pos < (int)sizeof(console_buffer) - 1) {
-        putchar(c);
-        fflush(stdout);
-        console_buffer[console_pos++] = (char)c;
-    }
     SET_NIL_RETURN();
 }
 
