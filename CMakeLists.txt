@@ -202,6 +202,9 @@ if(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
   set(SAM2695_TX_PIN 53)
   set(SAM2695_RX_PIN 54)
   set(HAS_SAM2695 true)
+  # USB device identity (see the injection block below)
+  set(USB_PRODUCT_NAME "Midori Tab5")
+  set(USB_SERIAL_NUMBER "MIDORI-TAB5-001")
 elseif(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3)
   set(BOARD_NAME "M5Stack CoreS3 SE (${USB_MODE_NAME})")
   set(SD_MODE "spi")
@@ -218,6 +221,8 @@ elseif(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3)
   set(SAM2695_TX_PIN 17)
   set(SAM2695_RX_PIN 18)
   set(HAS_SAM2695 true)
+  set(USB_PRODUCT_NAME "Midori CoreS3")
+  set(USB_SERIAL_NUMBER "MIDORI-CORES3-001")
 else()
   # Default to Freenove - SDMMC mode (requires PSRAM disabled to avoid GPIO conflict)
   set(BOARD_NAME "Freenove ESP32-S3 (${USB_MODE_NAME})")
@@ -235,6 +240,25 @@ else()
   set(SAM2695_TX_PIN 17)
   set(SAM2695_RX_PIN 18)
   set(HAS_SAM2695 true)
+  set(USB_PRODUCT_NAME "Midori Freenove")
+  set(USB_SERIAL_NUMBER "MIDORI-FREENOVE-001")
+endif()
+
+# Configure picoruby-usb_midi_device for Midori.
+#
+# The gem itself carries no product identity: it is MIDI-only and named
+# "PicoRuby MIDI" unless the host project injects these defines (see
+# mrbgems/picoruby-usb_midi_device/include/usb_midi_device_config.h).
+# Midori enables the optional CDC interface because the console (and
+# `idf.py monitor`) rides on the same USB-C connector in this mode.
+if(CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    USB_MIDI_DEVICE_ENABLED=1
+    USB_MIDI_DEVICE_WITH_CDC=1
+    USB_MIDI_DEVICE_MANUFACTURER=\"Midori\"
+    USB_MIDI_DEVICE_PRODUCT=\"${USB_PRODUCT_NAME}\"
+    USB_MIDI_DEVICE_SERIAL=\"${USB_SERIAL_NUMBER}\"
+  )
 endif()
 
 configure_file(
