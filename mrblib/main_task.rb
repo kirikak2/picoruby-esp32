@@ -395,6 +395,27 @@ else
 
   # STDIN/STDOUT are already defined in kernel.rb, no need to redefine
 
+  # File transfer with the PicoRuby web terminal (see docs/PICOMODEM.md).
+  # Required here, after "shell" has pulled in vfs, so that the File patch
+  # below reopens the real File class instead of creating an empty one.
+  require "picomodem"
+
+  # PicoModem asks the file it is writing to preallocate a contiguous
+  # block. FatFs' f_expand() fails with FR_DENIED when the card has no
+  # contiguous free area that big, and picoruby-filesystem-fat turns that
+  # into a RuntimeError that aborts the upload. Contiguous allocation is
+  # only an optimisation, so fall back to a plain write.
+  class File
+    def expand(size)
+      begin
+        @file.expand(size) if @file.respond_to?(:expand)
+      rescue => e
+        # fragmented card: f_write still works
+      end
+      size
+    end
+  end
+
   puts "Board: #{BoardConfig::BOARD_NAME}"
 
   # Setup flash disk
@@ -435,6 +456,20 @@ else
   print "> "
 
   loop do
+    # Check for a file transfer requested by the PicoRuby web terminal.
+    # The console task has already answered the STX handshake and is
+    # feeding raw bytes to STDIN; run one PicoModem command and return.
+    if sm.modem_requested?
+      begin
+        PicoModem.session($stdin, ConsoleIO.new)
+      rescue => e
+        puts "[PicoModem] error: #{e.message}"
+      end
+      sm.modem_end
+      GC.start
+      next
+    end
+
     # Check for console input (load command)
     console_script = sm.check_console
     if console_script

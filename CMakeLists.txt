@@ -101,6 +101,7 @@ idf_component_register(
   PRIV_REQUIRES
     esp_driver_gpio
     esp_driver_uart
+    esp_driver_usb_serial_jtag
     esp_driver_spi
     esp_driver_sdmmc
     esp_driver_ledc

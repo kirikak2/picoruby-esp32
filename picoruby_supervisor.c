@@ -84,6 +84,7 @@ static void supervisor_task(void *arg);
 static void picoruby_runner_task(void *arg);
 static bool run_vm_with_main_task(void);
 static void register_script_manager_class(mrbc_vm *vm);
+static void register_console_io_class(mrbc_vm *vm);
 
 // External declarations from picoruby-esp32.c
 extern void initialize_nvs(void);
@@ -715,6 +716,55 @@ static void c_sm_check_console(mrbc_vm *vm, mrbc_value v[], int argc)
     SET_NIL_RETURN();
 }
 
+/*
+ * PicoModem (file transfer with the PicoRuby web terminal).
+ *
+ * The console task answers the host's STX handshake on its own and then
+ * pumps raw bytes into PicoRuby's stdin, but the transfer itself has to
+ * run here: PicoModem reads and writes files through File/VFS, and only
+ * PicoRuby's VFS knows about /sd. See docs/PICOMODEM.md.
+ */
+static void c_sm_modem_requested(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+    (void)vm; (void)v; (void)argc;
+    if (console_input_modem_pending()) {
+        SET_TRUE_RETURN();
+    } else {
+        SET_FALSE_RETURN();
+    }
+}
+
+static void c_sm_modem_end(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+    (void)vm; (void)v; (void)argc;
+    console_input_modem_exit();
+    SET_NIL_RETURN();
+}
+
+/*
+ * ConsoleIO#write — binary-safe counterpart of $stdout.write.
+ *
+ * $stdout goes through picorb_hal_write() and the stdio VFS, which
+ * rewrites LF as CRLF and would corrupt every frame carrying a 0x0A. This
+ * writes the string's bytes, length-delimited, straight to the link.
+ */
+static void c_console_io_write(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+    if (argc != 1 || v[1].tt != MRBC_TT_STRING) {
+        mrbc_raise(vm, MRBC_CLASS(TypeError), "ConsoleIO#write expects a String");
+        return;
+    }
+    int written = console_input_write_raw(v[1].string->data,
+                                          (size_t)v[1].string->size);
+    SET_INT_RETURN(written);
+}
+
+static void register_console_io_class(mrbc_vm *vm)
+{
+    mrbc_class *cls = mrbc_define_class(vm, "ConsoleIO", mrbc_class_object);
+    mrbc_define_method(vm, cls, "write", c_console_io_write);
+}
+
 static void c_sm_cleanup_midi(mrbc_vm *vm, mrbc_value v[], int argc)
 {
     (void)vm; (void)v; (void)argc;
@@ -812,6 +862,8 @@ static void register_script_manager_class(mrbc_vm *vm)
     mrbc_define_method(vm, cls, "clear_request", c_sm_clear_request);
     mrbc_define_method(vm, cls, "stop_requested?", c_sm_stop_requested);
     mrbc_define_method(vm, cls, "check_console", c_sm_check_console);
+    mrbc_define_method(vm, cls, "modem_requested?", c_sm_modem_requested);
+    mrbc_define_method(vm, cls, "modem_end", c_sm_modem_end);
     mrbc_define_method(vm, cls, "cleanup_midi", c_sm_cleanup_midi);
     mrbc_define_method(vm, cls, "free_heap", c_sm_free_heap);
     mrbc_define_method(vm, cls, "sd_refresh_requested?", c_sm_sd_refresh_requested);
@@ -853,6 +905,9 @@ static bool run_vm_with_main_task(void)
 
     // Register ScriptManager class
     register_script_manager_class(vm);
+
+    // Register ConsoleIO (binary console writer used by PicoModem)
+    register_console_io_class(vm);
 
     // Run the VM (this blocks until all tasks complete)
     mrbc_run();

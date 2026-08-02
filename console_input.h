@@ -14,6 +14,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +33,38 @@ void console_input_start(void);
  * false when the queue is empty.
  */
 bool console_input_pop_command(char *out, size_t out_size);
+
+/*--------------------------------------------------------------------+
+ * PicoModem (binary file transfer) mode
+ *
+ * The host — the PicoRuby web terminal — starts a transfer by sending a
+ * bare STX (0x02), the same handshake R2P2's shell uses. The console task
+ * answers with ACK (0x06), stops echoing and line editing, and from then
+ * on forwards every byte to PicoRuby's stdin ring buffer so that
+ * PicoModem.session can read frames through STDIN.read_nonblock.
+ *
+ * The session itself has to run on the Ruby side: only PicoRuby's VFS can
+ * reach /sd (see docs/PICOMODEM.md).
+ *--------------------------------------------------------------------*/
+
+/*
+ * True once the host asked for a PicoModem session and the Ruby side has
+ * not called console_input_modem_exit() yet.
+ */
+bool console_input_modem_pending(void);
+
+/*
+ * Write bytes to the console link untouched — no LF -> CRLF translation,
+ * no NUL termination. Frames must go through this rather than $stdout,
+ * whose VFS would corrupt them. Returns the number of bytes written.
+ */
+int console_input_write_raw(const uint8_t *data, size_t len);
+
+/*
+ * End a PicoModem session: resume echo and line editing, restore logging
+ * and print a fresh prompt.
+ */
+void console_input_modem_exit(void);
 
 #ifdef __cplusplus
 }
