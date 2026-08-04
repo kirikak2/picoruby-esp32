@@ -42,6 +42,12 @@
  *   and into a byte pump feeding PicoRuby's stdin ring buffer, so that
  *   PicoModem.session can run the binary transfer protocol on the Ruby
  *   side (only PicoRuby's VFS can reach /sd). See docs/PICOMODEM.md.
+ *
+ * irb mode:
+ *   The "irb" command asks the supervisor for an interactive Ruby task.
+ *   That task brings its own line editor (Editor::Line, reading STDIN), so
+ *   the console task hands the link over for the duration of the session -
+ *   same byte pump as PicoModem in CDC mode. See docs/IRB.md.
  */
 
 #include <stdio.h>
@@ -94,6 +100,17 @@ static const char *TAG = "CONSOLE";
 #define CONSOLE_CDC_TX_CHUNK     64   /* bytes per write_queue/flush pair */
 #define CONSOLE_CDC_TX_TIMEOUT   pdMS_TO_TICKS(200)
 
+/*
+ * What the console task does with an incoming byte. LINE is the normal
+ * command line; the other two hand the link to the Ruby side and differ
+ * only in who ends the session.
+ */
+typedef enum {
+    CONSOLE_MODE_LINE = 0,  /* echo + line editing + command parsing */
+    CONSOLE_MODE_MODEM,     /* PicoModem frames -> PicoRuby stdin */
+    CONSOLE_MODE_IRB,       /* irb keystrokes -> PicoRuby stdin */
+} console_mode_t;
+
 static StreamBufferHandle_t s_rx_stream  = NULL;
 static QueueHandle_t        s_cmd_queue  = NULL;
 static TaskHandle_t         s_task       = NULL;
@@ -101,10 +118,10 @@ static bool                 s_cdc_mode   = false;
 /* Written by the TinyUSB task, cleared by the console task: a lost update
  * only costs a warning line. */
 static volatile uint32_t    s_rx_dropped = 0;
-/* Set by the console task when it sees STX, cleared by the Ruby side
- * through console_input_modem_exit(). */
-static volatile bool        s_modem_mode = false;
-static volatile uint32_t    s_modem_lost = 0;
+/* MODEM is entered by the console task itself (on STX) and left by the
+ * Ruby side; IRB is entered and left by the Ruby side. */
+static volatile console_mode_t s_mode     = CONSOLE_MODE_LINE;
+static volatile uint32_t    s_raw_lost   = 0;
 
 /* Line editor state. Kept on the console task's stack rather than in .bss
  * (see docs/MEMORY_ALLOCATION.md on static buffers and DRAM layout). */
@@ -129,6 +146,7 @@ static void console_help(void)
 {
     printf("Commands:\n");
     printf("  load /sd/app.rb  - Load and run a script\n");
+    printf("  irb              - Start an interactive Ruby session\n");
     printf("  stop             - Stop the running script (back to UI mode)\n");
     printf("  heap             - Show free heap memory\n");
     printf("  restart          - Restart ESP32\n");
@@ -236,7 +254,7 @@ int console_input_write_raw(const uint8_t *data, size_t len)
  */
 static void console_modem_enter(void)
 {
-    s_modem_mode = true;
+    s_mode = CONSOLE_MODE_MODEM;
 
     /* Log lines share the link with the frames; anything printed between
      * here and console_input_modem_exit() would land inside the stream. */
@@ -258,12 +276,12 @@ static void console_modem_enter(void)
 
 bool console_input_modem_pending(void)
 {
-    return s_modem_mode;
+    return s_mode == CONSOLE_MODE_MODEM;
 }
 
 void console_input_modem_exit(void)
 {
-    if (!s_modem_mode) {
+    if (s_mode != CONSOLE_MODE_MODEM) {
         return;
     }
 
@@ -271,16 +289,58 @@ void console_input_modem_exit(void)
     console_set_rx_endings(CONSOLE_RX_DEFAULT_ENDINGS);
 #endif
 
-    s_modem_mode = false;
+    s_mode = CONSOLE_MODE_LINE;
     esp_log_level_set("*", (esp_log_level_t)CONFIG_LOG_DEFAULT_LEVEL);
 
-    uint32_t lost = s_modem_lost;
+    uint32_t lost = s_raw_lost;
     if (lost) {
-        s_modem_lost = 0;
+        s_raw_lost = 0;
         ESP_LOGW(TAG, "PicoModem: %u bytes dropped (stdin buffer full)",
                  (unsigned)lost);
     }
 
+    console_prompt();
+}
+
+/*--------------------------------------------------------------------+
+ * irb mode
+ *
+ * Unlike PicoModem this is plain text, so line endings and logging are
+ * left alone: the session is meant to be read by a human, and ESP_LOG
+ * lines from the MIDI drivers are part of what one wants to see while
+ * poking at devices from the prompt.
+ *
+ * Terminal mode is left cooked on purpose. In cooked mode
+ * picorb_hal_stdin_push() turns 0x03/0x1A into signals, which is how
+ * Ctrl-C aborts a running expression and Editor::Line clears its buffer;
+ * IO#read_nonblock flips to raw for the duration of each read by itself.
+ *--------------------------------------------------------------------*/
+
+void console_input_irb_enter(void)
+{
+    if (s_mode == CONSOLE_MODE_IRB) {
+        return;
+    }
+    ESP_LOGI(TAG, "irb: console handed over to the Ruby side");
+    s_mode = CONSOLE_MODE_IRB;
+}
+
+void console_input_irb_exit(void)
+{
+    if (s_mode != CONSOLE_MODE_IRB) {
+        return;
+    }
+
+    s_mode = CONSOLE_MODE_LINE;
+
+    uint32_t lost = s_raw_lost;
+    if (lost) {
+        s_raw_lost = 0;
+        ESP_LOGW(TAG, "irb: %u bytes dropped (stdin buffer full)",
+                 (unsigned)lost);
+    }
+
+    ESP_LOGI(TAG, "irb: console taken back");
     console_prompt();
 }
 
@@ -323,6 +383,20 @@ static void console_execute(const char *line)
         }
         ESP_LOGI(TAG, "Console: load %s", path);
         console_queue_script(path);
+        return;
+    }
+
+    /* Like "stop", handled in C: the supervisor starts irb as a PicoRuby
+     * task of its own, so it works whether the Ruby side is sitting in the
+     * UI loop or busy running a script. The console stays in line mode
+     * until the session itself calls console_input_irb_enter(). */
+    if (strcmp(line, "irb") == 0) {
+        if (supervisor_request_irb()) {
+            printf("Starting irb...\n");
+        } else {
+            printf("Failed to start irb\n");
+        }
+        fflush(stdout);
         return;
     }
 
@@ -437,15 +511,15 @@ static void console_feed(console_line_t *st, uint8_t c)
 }
 
 /*
- * During a PicoModem session the bytes belong to the protocol, not to the
- * line editor: hand them to PicoRuby's stdin ring buffer so that
- * PicoModem.session picks them up through STDIN.read_nonblock.
+ * Outside the normal command line the bytes belong to the Ruby side - to
+ * the PicoModem protocol or to irb's line editor - so they go into
+ * PicoRuby's stdin ring buffer, where STDIN.read_nonblock picks them up.
  */
 static void console_dispatch(console_line_t *st, uint8_t c)
 {
-    if (s_modem_mode) {
+    if (s_mode != CONSOLE_MODE_LINE) {
         if (!picorb_hal_stdin_push(c)) {
-            s_modem_lost++;
+            s_raw_lost++;
         }
         return;
     }
@@ -491,6 +565,14 @@ static void console_input_task(void *arg)
             for (size_t i = 0; i < n; i++) {
                 console_dispatch(&st, buf[i]);
             }
+        } else if (s_mode == CONSOLE_MODE_IRB) {
+            /* picoruby-machine runs its own stdin_reader task polling this
+             * very link, and it fills the ring buffer irb reads from. Two
+             * pollers would split the keystrokes between them, so stand
+             * back for the duration of the session. (PicoModem keeps
+             * pumping: it answers the STX handshake from here and cannot
+             * assume the Ruby task is awake yet.) */
+            vTaskDelay(pdMS_TO_TICKS(CONSOLE_POLL_INTERVAL_MS));
         } else {
             /* UART / USB-Serial-JTAG: no RX callback available, so drain
              * stdin here. Being a task of its own, a short interval costs

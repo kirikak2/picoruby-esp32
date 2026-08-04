@@ -166,6 +166,11 @@ bool supervisor_request_script(const char *script_path)
     return xQueueSend(s_cmd_queue, &cmd, pdMS_TO_TICKS(100)) == pdPASS;
 }
 
+bool supervisor_request_irb(void)
+{
+    return supervisor_request_script(SUPERVISOR_IRB_PATH);
+}
+
 bool supervisor_stop_script(void)
 {
     if (!s_cmd_queue || !supervisor_is_script_running()) {
@@ -268,6 +273,12 @@ void supervisor_clear_ruby_request(void)
 // ============================================================================
 // Internal Functions
 // ============================================================================
+
+/* An irb session occupies the "current script" slot like any script. */
+static bool is_irb_path(const char *path)
+{
+    return path != NULL && strcmp(path, SUPERVISOR_IRB_PATH) == 0;
+}
 
 #if defined(PICORB_VM_MRUBYC)
 /**
@@ -434,6 +445,13 @@ static void start_picoruby_task(const char *script_path)
     ESP_LOGI(TAG, "Starting PicoRuby task, script: %s",
              script_path ? script_path : "(UI mode)");
 
+    // Anything but irb needs the console back in line-editing mode. Doing
+    // it here (rather than trusting the session's own ensure block) also
+    // covers an irb task that crashed or was force-stopped.
+    if (!is_irb_path(script_path)) {
+        console_input_irb_exit();
+    }
+
     // Set the requested script for main_task.rb to read
     if (script_path) {
         strncpy(s_requested_script, script_path, sizeof(s_requested_script) - 1);
@@ -531,6 +549,26 @@ static void supervisor_task(void *arg)
                     clear_script_request_flags();
                     start_picoruby_task(NULL);
                     break;
+            }
+        }
+
+        // irb has no cooperative stop check: its editor loop sits in
+        // STDIN.read_nonblock and never looks at g_stop_requested. A script
+        // tapped on the UI while irb is running would otherwise stay in the
+        // request flags with nothing to act on them, so turn it into a load
+        // command here - that path stops the task (forcibly, after the
+        // timeout) before starting the script.
+        if (is_irb_path(s_current_script) && s_picoruby_task != NULL) {
+            extern volatile bool g_script_change_requested;
+            extern char g_requested_script[];
+            if (g_script_change_requested && g_requested_script[0] != '\0') {
+                char next_script[128];
+                strncpy(next_script, g_requested_script, sizeof(next_script) - 1);
+                next_script[sizeof(next_script) - 1] = '\0';
+                g_script_change_requested = false;
+                g_requested_script[0] = '\0';
+                ESP_LOGI(TAG, "irb: UI requested script %s", next_script);
+                supervisor_request_script(next_script);
             }
         }
 
@@ -851,11 +889,53 @@ static void c_sm_free_heap(mrbc_vm *vm, mrbc_value v[], int argc)
     SET_INT_RETURN(free_heap);
 }
 
+/*
+ * irb mode.
+ *
+ * The supervisor starts an interactive session the same way it starts a
+ * script, passing SUPERVISOR_IRB_PATH through the requested-script slot;
+ * main_task.rb asks these methods which of the three modes (irb, script,
+ * UI) it was started in.
+ *
+ * irb_begin/irb_end frame the session: between them the console task
+ * stops echoing and line-editing and feeds raw bytes to PicoRuby's stdin,
+ * which is where Editor::Line reads its keystrokes. See docs/IRB.md.
+ */
+static void c_sm_irb_requested(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+    (void)vm; (void)v; (void)argc;
+    if (is_irb_path(supervisor_get_requested_script())) {
+        SET_TRUE_RETURN();
+    } else {
+        SET_FALSE_RETURN();
+    }
+}
+
+static void c_sm_irb_begin(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+    (void)vm; (void)v; (void)argc;
+    console_input_irb_enter();
+    SET_NIL_RETURN();
+}
+
+static void c_sm_irb_end(mrbc_vm *vm, mrbc_value v[], int argc)
+{
+    (void)vm; (void)v; (void)argc;
+    console_input_irb_exit();
+    SET_NIL_RETURN();
+}
+
 // New method: get_autorun_script - returns script path from supervisor
 static void c_sm_get_autorun_script(mrbc_vm *vm, mrbc_value v[], int argc)
 {
     (void)v; (void)argc;
     const char *script = supervisor_get_requested_script();
+    // irb is not a file: main_task.rb reaches it through irb_requested?
+    // and must not try to load it as one.
+    if (is_irb_path(script)) {
+        SET_NIL_RETURN();
+        return;
+    }
     if (script && script[0] != '\0') {
         ESP_LOGI(TAG, "get_autorun_script returning: %s", script);
         mrbc_value str = mrbc_string_new_cstr(vm, script);
@@ -943,6 +1023,10 @@ static void register_script_manager_class(mrbc_vm *vm)
     // New supervisor-based methods
     mrbc_define_method(vm, cls, "get_autorun_script", c_sm_get_autorun_script);
     mrbc_define_method(vm, cls, "request_script", c_sm_request_script);
+    // irb (interactive Ruby) session
+    mrbc_define_method(vm, cls, "irb_requested?", c_sm_irb_requested);
+    mrbc_define_method(vm, cls, "irb_begin", c_sm_irb_begin);
+    mrbc_define_method(vm, cls, "irb_end", c_sm_irb_end);
     ESP_LOGI(TAG, "ScriptManager class registered");
 }
 

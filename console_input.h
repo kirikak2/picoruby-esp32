@@ -66,6 +66,31 @@ int console_input_write_raw(const uint8_t *data, size_t len);
  */
 void console_input_modem_exit(void);
 
+/*--------------------------------------------------------------------+
+ * irb (interactive Ruby) mode
+ *
+ * While irb runs, the line editing lives on the Ruby side (Editor::Line
+ * inside picoruby-shell), so the console task must get out of the way:
+ * it stops echoing and, in CDC mode, forwards every byte to PicoRuby's
+ * stdin ring buffer instead. In the other USB port modes it stops reading
+ * the link altogether and leaves it to picoruby-machine's stdin_reader
+ * task, which feeds the same ring buffer.
+ *
+ * The irb session itself is started by the supervisor as its own PicoRuby
+ * task (see supervisor_request_irb) - see docs/IRB.md.
+ *--------------------------------------------------------------------*/
+
+/* Hand the link to the Ruby side. Called from Ruby once irb is ready. */
+void console_input_irb_enter(void);
+
+/*
+ * Take the link back: resume echo and line editing and print a fresh
+ * prompt. Safe to call when no irb session is active; the supervisor
+ * calls it whenever it starts a non-irb task, so a crashed or force-
+ * stopped session cannot leave the console mute.
+ */
+void console_input_irb_exit(void);
+
 #ifdef __cplusplus
 }
 #endif

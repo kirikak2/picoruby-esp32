@@ -27,6 +27,16 @@ typedef struct {
 } supervisor_script_result_t;
 
 /**
+ * @brief Pseudo script path that starts an interactive Ruby session
+ *
+ * irb is run exactly like a script - own PicoRuby task, own VM, back to UI
+ * mode when it ends - so it travels through the same "requested script"
+ * slot. The leading colon keeps it apart from any real path on /sd.
+ * See docs/IRB.md.
+ */
+#define SUPERVISOR_IRB_PATH ":irb"
+
+/**
  * @brief Supervisor state
  */
 typedef enum {
@@ -54,6 +64,18 @@ void supervisor_init(void);
  * @return true if request was accepted, false otherwise
  */
 bool supervisor_request_script(const char *script_path);
+
+/**
+ * @brief Request an interactive Ruby (irb) session
+ *
+ * Shorthand for supervisor_request_script(SUPERVISOR_IRB_PATH): stops
+ * whatever is running, resets the VM and starts main_task.rb in irb mode.
+ * The session reads and writes the serial console (USB CDC in
+ * midi_device mode) and ends on "quit", "exit" or Ctrl-D.
+ *
+ * @return true if the request was accepted
+ */
+bool supervisor_request_irb(void);
 
 /**
  * @brief Request to stop the currently running script

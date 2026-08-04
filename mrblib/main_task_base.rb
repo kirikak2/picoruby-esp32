@@ -309,18 +309,85 @@ def run_script(script_path)
   end
 end
 
+# Interactive Ruby session on the serial console (USB CDC in midi_device
+# mode). See docs/IRB.md.
+#
+# The supervisor starts this like any script - own PicoRuby task, fresh
+# VM, back to UI mode when it returns - and Shell#start(:irb) evaluates
+# every line in a PicoRuby Sandbox, the same mechanism Kernel.load uses
+# for scripts. A syntax error or an exception therefore lands in the
+# sandbox, not in this task.
+#
+# (Named _session to stay clear of Shell#run_irb, which is the method this
+# one ends up calling through Shell#start.)
+def run_irb_session
+  sm = ScriptManager.new
+  # Hand the console over: from here the console task stops echoing and
+  # line editing and pushes raw bytes into PicoRuby's stdin. Editor::Line
+  # does its own echo, so leaving the C side in line mode would show
+  # every keystroke twice and swallow the arrow keys.
+  sm.irb_begin
+  begin
+    STDIN.echo = false
+    # Popped by the first Sandbox#wait (the warm-up run inside
+    # Shell#run_irb), so that one cannot be interrupted. Every later wait
+    # checks signals again, which is what makes Ctrl-C abort a long
+    # running expression.
+    Machine.signal_self_manage
+    # clean: true probes the terminal (ENV['TERM']) before the editor asks
+    # for the screen size; without it every redraw waits out a 500 ms
+    # cursor-position timeout on terminals that do not answer, such as
+    # idf.py monitor.
+    shell = Shell.new(clean: true)
+    puts "PicoRuby irb - #{BoardConfig::BOARD_NAME}"
+    puts "quit / exit / Ctrl-D to leave, Ctrl-C to abort an expression"
+    puts ""
+    shell.start(:irb)
+    puts "Leaving irb"
+  rescue => e
+    error_msg = "irb error: #{e.message}"
+    puts error_msg
+    sm.add_log(error_msg)
+  ensure
+    sm.irb_end
+    GC.start
+  end
+end
+
 # ============================================================================
-# Main execution: UI Mode vs Script Mode
+# Main execution: irb Mode vs UI Mode vs Script Mode
 # ============================================================================
-# The supervisor passes a script path via get_autorun_script()
-# - If a script path is provided: Script Mode - run the script then exit
-# - If nil: UI Mode - enter the script selection loop
+# The supervisor tells us which mode this task was started in:
+# - irb_requested?: irb Mode - interactive console session, then exit
+# - get_autorun_script: Script Mode - run the script then exit
+# - neither: UI Mode - enter the script selection loop
 # ============================================================================
 
 sm = ScriptManager.new
 script_to_run = sm.get_autorun_script
 
-if script_to_run
+if sm.irb_requested?
+  # ========== irb Mode ==========
+  # Same minimal bring-up as Script Mode: irb is expected to poke at the
+  # same things a script does, /sd included.
+  require 'machine'  # This loads picoruby-machine/mrblib/kernel.rb which defines STDIN/STDOUT
+  require "watchdog"
+  Watchdog.disable
+  require "shell"
+
+  puts "irb Mode"
+
+  # VFS state may be cleared by mrbc_cleanup(), check and re-init if needed
+  $sd_available = VFS.volume_index("/sd") ? true : false
+  if !$sd_available && BoardConfig::SD_MODE != "none"
+    puts "SD card not mounted, re-initializing..."
+    $sd_available = try_init_sd_card
+  end
+
+  run_irb_session
+  puts "irb finished, exiting to supervisor"
+
+elsif script_to_run
   # ========== Script Mode ==========
   # Load minimal required gems
   require 'machine'  # This loads picoruby-machine/mrblib/kernel.rb which defines STDIN/STDOUT
@@ -414,6 +481,7 @@ else
   puts ""
   puts "Available commands:"
   puts "  load /sd/app.rb  - Load and run a script"
+  puts "  irb              - Start an interactive Ruby session"
   puts "  heap             - Show free heap memory"
   puts "  restart          - Restart ESP32"
   print "> "
