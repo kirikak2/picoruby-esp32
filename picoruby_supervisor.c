@@ -367,8 +367,12 @@ static void reset_ui_state(void)
 {
 #if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
     extern void ui_pad_clear_all(void);
+    extern void ui_knob_clear_all(void);
     extern void ui_event_init(void);
     ui_pad_clear_all();
+    // Knobs hold no notes, so there is nothing to silence -- but the previous
+    // script's labels and banks must not be left on screen.
+    ui_knob_clear_all();
     ui_event_init();
 #endif
 }
