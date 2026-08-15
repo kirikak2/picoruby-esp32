@@ -368,7 +368,13 @@ static void reset_ui_state(void)
 #if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
     extern void ui_pad_clear_all(void);
     extern void ui_event_init(void);
+    extern void ui_xypad_reset(void);
     ui_pad_clear_all();
+    // Drops every XYPad slot, including ones latched by Hold. This does not
+    // itself send MIDI (nothing in C does, see docs/XYPAD.md) -- any latched
+    // note is silenced by the existing All Sound Off / All Notes Off sweep
+    // this same stop path already sends across every channel.
+    ui_xypad_reset();
     ui_event_init();
 #endif
 }
