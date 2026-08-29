@@ -188,10 +188,11 @@ endif()
 set(SD_SLOT -1)
 set(SD_FREQ_KHZ -1)
 
-# Primary I2C bus for accessories (e.g. DFRobot rotary encoders). Every board
-# wires this to the same pins as the SAM2695 UART header (Port A on Tab5), so
-# it is mutually exclusive with SAM2695 on a given board -- pick one use per
-# script. The underlying hardware unit varies (PRIMARY_I2C_UNIT): most boards
+# Primary I2C bus for accessories (e.g. DFRobot rotary encoders). A board
+# without a dedicated I2C connector wires this to the SAM2695 UART pins
+# (Port A on Tab5), so there it is mutually exclusive with SAM2695 -- pick one
+# use per script. CrowPanel has its own I2C connector and can run both at
+# once. The underlying hardware unit varies (PRIMARY_I2C_UNIT): most boards
 # have it free as I2C0, but CrowPanel already runs its touch controller on
 # I2C0, so there it is I2C1.
 set(HAS_PRIMARY_I2C false)
@@ -257,13 +258,21 @@ elseif(CONFIG_USB_MIDI_BOARD_ELECROW_CROWPANEL)
   set(SAM2695_TX_PIN 47)
   set(SAM2695_RX_PIN 48)
   set(HAS_SAM2695 true)
-  # Same header can be rewired as I2C for accessories instead of the
-  # SAM2695 UART -- same physical pins, pick one use per script. The touch
-  # controller (GT911) already owns hardware I2C0 (GPIO 45/46), so this one
-  # has to run on I2C1.
+  # Accessories go on the connector marked I2C (PH2.0-4P): SDA = IO45 /
+  # SCL = IO46. Those are the GT911's pins too -- that connector is a tap on
+  # the touch bus, not a bus of its own. M5GFX drives the touch on hardware
+  # I2C0, so ours is a second peripheral (I2C1) on the same pads; measured
+  # good on hardware with a DFRobot encoder. Being a separate connector from
+  # the UART1 header, this is the one board where SAM2695 and the accessory
+  # I2C can be used at the same time.
+  # M5GFX re-points the pads at I2C0 on every touch read
+  # (lgfx::i2c::beginTransaction -> set_pin) and never points them back, which
+  # left this bus dead from the first screen touch onwards. picoruby-i2c's
+  # ESP32 port now re-asserts the routing before every transfer
+  # (i2c_reclaim_pins); see docs/CROWPANEL.md.
   set(HAS_PRIMARY_I2C true)
-  set(PRIMARY_I2C_SDA_PIN 47)
-  set(PRIMARY_I2C_SCL_PIN 48)
+  set(PRIMARY_I2C_SDA_PIN 45)
+  set(PRIMARY_I2C_SCL_PIN 46)
   set(PRIMARY_I2C_UNIT "ESP32_I2C1")
   set(USB_PRODUCT_NAME "Midori CrowPanel")
   set(USB_SERIAL_NUMBER "MIDORI-CROWPANEL-001")
