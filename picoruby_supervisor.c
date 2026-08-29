@@ -39,7 +39,7 @@ extern void mrbc_sandbox_cleanup(void);
 static const char *TAG = "SUPERVISOR";
 
 // Platform-specific includes
-#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
+#if defined(CONFIG_USB_MIDI_UI_ENABLED)
 #include "ui_common.h"
 #endif
 
@@ -225,7 +225,7 @@ void supervisor_log(const char *format, ...)
     // Always log to serial
     ESP_LOGI(TAG, "%s", buf);
 
-#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
+#if defined(CONFIG_USB_MIDI_UI_ENABLED)
     // Also log to M5Stack UI
     extern void ui_add_log(const char *msg);
     ui_add_log(buf);
@@ -365,7 +365,7 @@ static void clear_script_request_flags(void)
  */
 static void reset_ui_state(void)
 {
-#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
+#if defined(CONFIG_USB_MIDI_UI_ENABLED)
     extern void ui_pad_clear_all(void);
     extern void ui_knob_clear_all(void);
     extern void ui_event_init(void);
@@ -1003,7 +1003,7 @@ static void c_sm_add_log(mrbc_vm *vm, mrbc_value v[], int argc)
     }
 
     const char *text = (const char *)mrbc_string_cstr(&str);
-#if defined(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3) || defined(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
+#if defined(CONFIG_USB_MIDI_UI_ENABLED)
     extern void ui_add_log(const char *msg);
     ui_add_log(text);
 #else

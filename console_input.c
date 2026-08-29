@@ -4,10 +4,10 @@
  * Owns everything between "bytes arrive on the console link" and "the Ruby
  * side is handed a complete command":
  *
- *   USB-MIDI-Device mode (CDC on the USB-C connector)
+ *   console on CDC (USB-MIDI-Device mode, except on the CrowPanel)
  *     TinyUSB task --console_cdc_rx_cb()--> RX stream buffer --+
  *                                                              |
- *   host / serial mode (UART or USB-Serial/JTAG)               |
+ *   console on UART / USB-Serial-JTAG (everything else)        |
  *     console task polls getchar() -----------------------------+
  *                                                              v
  *                                    console task: echo + line editing
@@ -64,7 +64,7 @@
 #include "console_input.h"
 #include "picoruby_supervisor.h"
 
-#if CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE
+#if CONFIG_USB_MIDI_CONSOLE_ON_CDC
 #include "usb_midi_device.h"
 #include "tinyusb_cdc_acm.h"
 #elif CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
@@ -166,7 +166,7 @@ static void console_help(void)
  * editing tolerates that; a binary protocol may see reordered bytes.
  *--------------------------------------------------------------------*/
 
-#if !CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE
+#if !CONFIG_USB_MIDI_CONSOLE_ON_CDC
 /*
  * The console VFS rewrites LF as CRLF on the way out and CR as LF on the
  * way in (CONFIG_LIBC_STD{OUT,IN}_LINE_ENDING_*), either of which would
@@ -205,7 +205,7 @@ static void console_set_rx_endings(esp_line_endings_t mode)
     uart_vfs_dev_port_set_rx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM, mode);
 #endif
 }
-#endif /* !CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE */
+#endif /* !CONFIG_USB_MIDI_CONSOLE_ON_CDC */
 
 int console_input_write_raw(const uint8_t *data, size_t len)
 {
@@ -213,7 +213,7 @@ int console_input_write_raw(const uint8_t *data, size_t len)
         return 0;
     }
 
-#if CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE
+#if CONFIG_USB_MIDI_CONSOLE_ON_CDC
     /* Straight to TinyUSB: the stdio VFS would translate LF to CRLF and
      * flushes one byte at a time. */
     size_t off = 0;
@@ -266,7 +266,7 @@ static void console_modem_enter(void)
      * signals, which are perfectly ordinary payload bytes. */
     io_raw_bang(true);
 
-#if !CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE
+#if !CONFIG_USB_MIDI_CONSOLE_ON_CDC
     console_set_rx_endings(ESP_LINE_ENDINGS_LF);
 #endif
 
@@ -285,7 +285,7 @@ void console_input_modem_exit(void)
         return;
     }
 
-#if !CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE
+#if !CONFIG_USB_MIDI_CONSOLE_ON_CDC
     console_set_rx_endings(CONSOLE_RX_DEFAULT_ENDINGS);
 #endif
 
@@ -530,7 +530,7 @@ static void console_dispatch(console_line_t *st, uint8_t c)
  * CDC receive hook (TinyUSB task context)
  *--------------------------------------------------------------------*/
 
-#if CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE
+#if CONFIG_USB_MIDI_CONSOLE_ON_CDC
 static void console_cdc_rx_cb(const uint8_t *data, size_t len, void *arg)
 {
     (void)arg;
@@ -612,7 +612,7 @@ void console_input_start(void)
         return;
     }
 
-#if CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE
+#if CONFIG_USB_MIDI_CONSOLE_ON_CDC
     s_rx_stream = xStreamBufferCreate(CONSOLE_RX_STREAM_SIZE, 1);
     if (s_rx_stream == NULL) {
         ESP_LOGE(TAG, "Failed to create RX stream buffer");

@@ -3,33 +3,42 @@
 
 module BoardConfig
   # Board name
-  BOARD_NAME = "M5Stack Tab5 (USB-MIDI device)"
+  BOARD_NAME = "Elecrow CrowPanel 7in (USB-MIDI device)"
 
   # SD Card interface mode: "sdmmc" or "spi"
-  SD_MODE = "spi"
+  SD_MODE = "sdmmc"
 
-  # SDMMC pins (for Freenove)
-  SD_CLK_PIN = -1
-  SD_CMD_PIN = -1
-  SD_D0_PIN  = -1
+  # SDMMC pins (for Freenove / CrowPanel)
+  SD_CLK_PIN = 43
+  SD_CMD_PIN = 44
+  SD_D0_PIN  = 39
+
+  # SDMMC host slot the card slot is wired to (-1 = let the driver pick).
+  # Not implied by the pins: on the ESP32-P4 slot 0 has dedicated IOMUX pins
+  # that the GPIO matrix cannot reach, so a card on those pins is only
+  # reachable through slot 0.
+  SD_SLOT = 0
+
+  # SDMMC bus clock ceiling in kHz (-1 = driver default, 20MHz)
+  SD_FREQ_KHZ = 10000
 
   # SPI pins (for M5Stack)
-  SD_SCK_PIN  = 43
-  SD_MISO_PIN = 39
-  SD_MOSI_PIN = 44
-  SD_CS_PIN   = 42
+  SD_SCK_PIN  = -1
+  SD_MISO_PIN = -1
+  SD_MOSI_PIN = -1
+  SD_CS_PIN   = -1
 
   # SPI unit for SD card (SPI mode only)
   SD_SPI_UNIT = :ESP32_SPI2_HOST
 
   # MIDI Device Configuration
   # SAM2695 synthesizer pins
-  SAM2695_TX_PIN = 53
-  SAM2695_RX_PIN = 54
+  SAM2695_TX_PIN = 47
+  SAM2695_RX_PIN = 48
   HAS_SAM2695 = true
 
   # USB-MIDI Host support
-  HAS_USB_MIDI_HOST = true
+  HAS_USB_MIDI_HOST = false
 
   # USB-MIDI Device support (for future implementation)
   HAS_USB_MIDI_DEVICE = true

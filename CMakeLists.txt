@@ -183,6 +183,11 @@ else()
   set(USB_MODE_NAME "USB-MIDI host")
 endif()
 
+# SDMMC host slot / bus clock. -1 lets the driver decide, which is what every
+# board wants unless its wiring says otherwise (see the CrowPanel below).
+set(SD_SLOT -1)
+set(SD_FREQ_KHZ -1)
+
 if(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
   # M5Stack Tab5 - ESP32-P4 with SPI SD card
   set(BOARD_NAME "M5Stack Tab5 (${USB_MODE_NAME})")
@@ -207,6 +212,35 @@ if(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
   # USB device identity (see the injection block below)
   set(USB_PRODUCT_NAME "Midori Tab5")
   set(USB_SERIAL_NUMBER "MIDORI-TAB5-001")
+elseif(CONFIG_USB_MIDI_BOARD_ELECROW_CROWPANEL)
+  # Elecrow CrowPanel Advanced 7.0" - ESP32-P4 with an SDMMC card slot
+  set(BOARD_NAME "Elecrow CrowPanel 7in (${USB_MODE_NAME})")
+  # The TF slot's CS line is tied to GND on this board, so there is no SPI
+  # chip select to drive: it is wired for SDMMC and used in 1-bit mode.
+  set(SD_MODE "sdmmc")
+  set(SD_CLK_PIN 43)
+  set(SD_CMD_PIN 44)
+  set(SD_D0_PIN 39)
+  # Those three are the ESP32-P4's dedicated slot 0 IOMUX pins (see
+  # soc/sdmmc_pins.h), and slot 0 cannot be reached through the GPIO matrix,
+  # so the card is only addressable on slot 0. Elecrow's own BSP does the same
+  # and caps the bus at 10MHz.
+  set(SD_SLOT 0)
+  set(SD_FREQ_KHZ 10000)
+  # SPI pins (not used here, set to -1)
+  set(SD_SCK_PIN -1)
+  set(SD_MISO_PIN -1)
+  set(SD_MOSI_PIN -1)
+  set(SD_CS_PIN -1)
+  # MIDI devices
+  # SAM2695 goes on the UART1 header (3.3V): IO47 = TX, IO48 = RX.
+  # NOTE: GPIO 45/46 are the touch panel's I2C and 43/44 the SD card, so
+  # neither pair is available here.
+  set(SAM2695_TX_PIN 47)
+  set(SAM2695_RX_PIN 48)
+  set(HAS_SAM2695 true)
+  set(USB_PRODUCT_NAME "Midori CrowPanel")
+  set(USB_SERIAL_NUMBER "MIDORI-CROWPANEL-001")
 elseif(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3)
   set(BOARD_NAME "M5Stack CoreS3 SE (${USB_MODE_NAME})")
   set(SD_MODE "spi")
@@ -251,12 +285,33 @@ endif()
 # The gem itself carries no product identity: it is MIDI-only and named
 # "PicoRuby MIDI" unless the host project injects these defines (see
 # mrbgems/picoruby-usb_midi_device/include/usb_midi_device_config.h).
-# Midori enables the optional CDC interface because the console (and
-# `idf.py monitor`) rides on the same USB-C connector in this mode.
+# Midori enables the optional CDC interface on the boards where the console
+# (and `idf.py monitor`) has to ride on the same USB-C connector in this mode.
+# The CrowPanel keeps its console on the CH343 UART bridge, so there it is a
+# plain MIDI device with no CDC interface at all.
 if(CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE)
+  if(CONFIG_USB_MIDI_CONSOLE_ON_CDC)
+    set(USB_MIDI_DEVICE_CDC 1)
+  else()
+    set(USB_MIDI_DEVICE_CDC 0)
+  endif()
+  # Which USB port the device connector is soldered to. The ESP32-P4 has two
+  # (full-speed OTG1.1 and high-speed OTG2.0) and only one of them reaches a
+  # given connector; the ESP32-S3 has a single full-speed port.
+  #   Tab5     - USB-C on the FS pads that USB-Serial/JTAG owns by default,
+  #              hence the PHY mux swap inside the gem.
+  #   CrowPanel- the connector Elecrow labels "USB 2.0" is the HS port; their
+  #              own TinyUSB example runs on esp_tinyusb's P4 default, which
+  #              is TINYUSB_PORT_HIGH_SPEED_0.
+  if(CONFIG_USB_MIDI_BOARD_ELECROW_CROWPANEL)
+    set(USB_MIDI_DEVICE_HS 1)
+  else()
+    set(USB_MIDI_DEVICE_HS 0)
+  endif()
   target_compile_definitions(${COMPONENT_LIB} PRIVATE
     USB_MIDI_DEVICE_ENABLED=1
-    USB_MIDI_DEVICE_WITH_CDC=1
+    USB_MIDI_DEVICE_WITH_CDC=${USB_MIDI_DEVICE_CDC}
+    USB_MIDI_DEVICE_HIGH_SPEED=${USB_MIDI_DEVICE_HS}
     USB_MIDI_DEVICE_MANUFACTURER=\"Midori\"
     USB_MIDI_DEVICE_PRODUCT=\"${USB_PRODUCT_NAME}\"
     USB_MIDI_DEVICE_SERIAL=\"${USB_SERIAL_NUMBER}\"

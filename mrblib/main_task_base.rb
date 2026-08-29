@@ -239,11 +239,13 @@ def try_init_sd_card
     if BoardConfig::SD_MODE == "sdmmc"
       # SDMMC mode
       require "sdmmc"
-      puts "  CLK=#{BoardConfig::SD_CLK_PIN}, CMD=#{BoardConfig::SD_CMD_PIN}, D0=#{BoardConfig::SD_D0_PIN}"
+      puts "  CLK=#{BoardConfig::SD_CLK_PIN}, CMD=#{BoardConfig::SD_CMD_PIN}, D0=#{BoardConfig::SD_D0_PIN}, slot=#{BoardConfig::SD_SLOT}"
       sdmmc = SDMMC.new(
-        clk_pin: BoardConfig::SD_CLK_PIN,
-        cmd_pin: BoardConfig::SD_CMD_PIN,
-        d0_pin:  BoardConfig::SD_D0_PIN
+        clk_pin:  BoardConfig::SD_CLK_PIN,
+        cmd_pin:  BoardConfig::SD_CMD_PIN,
+        d0_pin:   BoardConfig::SD_D0_PIN,
+        slot:     BoardConfig::SD_SLOT,
+        freq_khz: BoardConfig::SD_FREQ_KHZ
       )
       Shell.setup_sdcard(sdmmc)
     else
