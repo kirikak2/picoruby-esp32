@@ -188,6 +188,17 @@ endif()
 set(SD_SLOT -1)
 set(SD_FREQ_KHZ -1)
 
+# Primary I2C bus for accessories (e.g. DFRobot rotary encoders). Every board
+# wires this to the same pins as the SAM2695 UART header (Port A on Tab5), so
+# it is mutually exclusive with SAM2695 on a given board -- pick one use per
+# script. The underlying hardware unit varies (PRIMARY_I2C_UNIT): most boards
+# have it free as I2C0, but CrowPanel already runs its touch controller on
+# I2C0, so there it is I2C1.
+set(HAS_PRIMARY_I2C false)
+set(PRIMARY_I2C_SDA_PIN -1)
+set(PRIMARY_I2C_SCL_PIN -1)
+set(PRIMARY_I2C_UNIT "")
+
 if(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
   # M5Stack Tab5 - ESP32-P4 with SPI SD card
   set(BOARD_NAME "M5Stack Tab5 (${USB_MODE_NAME})")
@@ -209,6 +220,13 @@ if(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
   set(SAM2695_TX_PIN 53)
   set(SAM2695_RX_PIN 54)
   set(HAS_SAM2695 true)
+  # Port A can also be wired up as I2C for accessories (e.g. DFRobot rotary
+  # encoders) instead of the SAM2695 UART above -- same physical pins, pick
+  # one use per script.
+  set(HAS_PRIMARY_I2C true)
+  set(PRIMARY_I2C_SDA_PIN 53)
+  set(PRIMARY_I2C_SCL_PIN 54)
+  set(PRIMARY_I2C_UNIT "ESP32_I2C0")
   # USB device identity (see the injection block below)
   set(USB_PRODUCT_NAME "Midori Tab5")
   set(USB_SERIAL_NUMBER "MIDORI-TAB5-001")
@@ -239,6 +257,14 @@ elseif(CONFIG_USB_MIDI_BOARD_ELECROW_CROWPANEL)
   set(SAM2695_TX_PIN 47)
   set(SAM2695_RX_PIN 48)
   set(HAS_SAM2695 true)
+  # Same header can be rewired as I2C for accessories instead of the
+  # SAM2695 UART -- same physical pins, pick one use per script. The touch
+  # controller (GT911) already owns hardware I2C0 (GPIO 45/46), so this one
+  # has to run on I2C1.
+  set(HAS_PRIMARY_I2C true)
+  set(PRIMARY_I2C_SDA_PIN 47)
+  set(PRIMARY_I2C_SCL_PIN 48)
+  set(PRIMARY_I2C_UNIT "ESP32_I2C1")
   set(USB_PRODUCT_NAME "Midori CrowPanel")
   set(USB_SERIAL_NUMBER "MIDORI-CROWPANEL-001")
 elseif(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3)
@@ -257,6 +283,12 @@ elseif(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3)
   set(SAM2695_TX_PIN 17)
   set(SAM2695_RX_PIN 18)
   set(HAS_SAM2695 true)
+  # Same pins can be rewired as I2C for accessories instead of the SAM2695
+  # UART -- same physical pins, pick one use per script.
+  set(HAS_PRIMARY_I2C true)
+  set(PRIMARY_I2C_SDA_PIN 17)
+  set(PRIMARY_I2C_SCL_PIN 18)
+  set(PRIMARY_I2C_UNIT "ESP32_I2C0")
   set(USB_PRODUCT_NAME "Midori CoreS3")
   set(USB_SERIAL_NUMBER "MIDORI-CORES3-001")
 else()
@@ -276,6 +308,12 @@ else()
   set(SAM2695_TX_PIN 17)
   set(SAM2695_RX_PIN 18)
   set(HAS_SAM2695 true)
+  # Same pins can be rewired as I2C for accessories instead of the SAM2695
+  # UART -- same physical pins, pick one use per script.
+  set(HAS_PRIMARY_I2C true)
+  set(PRIMARY_I2C_SDA_PIN 17)
+  set(PRIMARY_I2C_SCL_PIN 18)
+  set(PRIMARY_I2C_UNIT "ESP32_I2C0")
   set(USB_PRODUCT_NAME "Midori Freenove")
   set(USB_SERIAL_NUMBER "MIDORI-FREENOVE-001")
 endif()

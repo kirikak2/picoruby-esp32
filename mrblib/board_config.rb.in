@@ -42,4 +42,15 @@ module BoardConfig
 
   # USB-MIDI Device support (for future implementation)
   HAS_USB_MIDI_DEVICE = @HAS_USB_MIDI_DEVICE@
+
+  # Primary I2C bus for accessories (e.g. DFRobot rotary encoders). Shares
+  # pins with the SAM2695 UART header (Port A on Tab5) on every board that has
+  # one, so HAS_PRIMARY_I2C and HAS_SAM2695 are mutually exclusive at runtime,
+  # not at build time -- pick one use per script. PRIMARY_I2C_UNIT names the
+  # underlying hardware bus, which varies by board (e.g. CrowPanel's touch
+  # controller already owns I2C0, so its accessory bus is I2C1).
+  HAS_PRIMARY_I2C      = @HAS_PRIMARY_I2C@
+  PRIMARY_I2C_SDA_PIN  = @PRIMARY_I2C_SDA_PIN@
+  PRIMARY_I2C_SCL_PIN  = @PRIMARY_I2C_SCL_PIN@
+  PRIMARY_I2C_UNIT     = "@PRIMARY_I2C_UNIT@"
 end
