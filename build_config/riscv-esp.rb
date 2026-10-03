@@ -69,4 +69,8 @@ MRuby::CrossBuild.new("esp32") do |conf|
 
   # DFRobot Visual Rotary Encoder (SEN0502) — pure Ruby on top of picoruby-i2c.
   conf.gem File.expand_path('../../../mrbgems/picoruby-dfrobot_rotary_encoder', __dir__)
+
+  # AMY software synthesizer — midori-specific gem. ESP32-P4 boards only
+  # (Tab5 / CrowPanel), so it is not in the xtensa (ESP32-S3) config.
+  conf.gem File.expand_path('../../../mrbgems/picoruby-amy', __dir__)
 end

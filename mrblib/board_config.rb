@@ -43,6 +43,9 @@ module BoardConfig
   # USB-MIDI Device support (for future implementation)
   HAS_USB_MIDI_DEVICE = true
 
+  # AMY software synthesizer on the board's speaker (picoruby-amy)
+  HAS_AMY = true
+
   # Primary I2C bus for accessories (e.g. DFRobot rotary encoders).
   # PRIMARY_I2C_UNIT names the underlying hardware bus, which varies by board.
   # A board without a dedicated I2C connector puts this on the SAM2695 UART

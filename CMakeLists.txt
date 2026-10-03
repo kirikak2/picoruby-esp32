@@ -36,6 +36,15 @@ else()
   )
 endif()
 
+# The AMY engine is an IDF component of its own (components/amy), built for
+# the ESP32-P4 boards only. Keyed off IDF_TARGET, not a CONFIG_ symbol:
+# requirements are collected in an early expansion pass where CONFIG_
+# variables do not exist yet.
+set(AMY_REQUIRES "")
+if(IDF_TARGET STREQUAL "esp32p4")
+  set(AMY_REQUIRES amy)
+endif()
+
 idf_component_register(
   SRCS
     ${COMPONENT_DIR}/picoruby-esp32.c
@@ -78,6 +87,7 @@ idf_component_register(
     ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-uart_midi/ports/esp32/uart_midi.c
     ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-midi/ports/esp32/midi.c
     ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-ui/ports/esp32/ui.c
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-amy/ports/esp32/amy_port.c
   INCLUDE_DIRS
     ${COMPONENT_DIR}
     ${COMPONENT_DIR}/picoruby/include
@@ -96,6 +106,7 @@ idf_component_register(
     ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-uart_midi/include
     ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-midi/include
     ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-ui/include
+    ${CMAKE_SOURCE_DIR}/mrbgems/picoruby-amy/include
     ${CMAKE_SOURCE_DIR}/main/ui
     ${ADDITIONAL_INCLUDE_DIRS}
   PRIV_REQUIRES
@@ -115,6 +126,8 @@ idf_component_register(
     esp_wifi
     usb
     esp_tinyusb
+    esp_driver_i2s
+    ${AMY_REQUIRES}
 )
 
 add_definitions(
@@ -200,6 +213,10 @@ set(PRIMARY_I2C_SDA_PIN -1)
 set(PRIMARY_I2C_SCL_PIN -1)
 set(PRIMARY_I2C_UNIT "")
 
+# AMY software synth on the board's speaker (picoruby-amy). Off unless the
+# board block below wires up an I2S output; see docs/AMY_SYNTH.md.
+set(HAS_AMY false)
+
 if(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
   # M5Stack Tab5 - ESP32-P4 with SPI SD card
   set(BOARD_NAME "M5Stack Tab5 (${USB_MODE_NAME})")
@@ -228,6 +245,16 @@ if(CONFIG_USB_MIDI_BOARD_M5STACK_TAB5)
   set(PRIMARY_I2C_SDA_PIN 53)
   set(PRIMARY_I2C_SCL_PIN 54)
   set(PRIMARY_I2C_UNIT "ESP32_I2C0")
+  # AMY: I2S0 -> ES8388 codec -> speaker amplifier (M5Unified's wiring).
+  # The codec needs MCLK and is set up for MCLK = 128 x fs (reg24 = 0x00,
+  # the register sequence M5Unified uses); the two must match. The codec /
+  # amplifier power-up is board code in main/platform/board_audio.cpp.
+  set(HAS_AMY true)
+  set(AMY_I2S_BCLK 27)
+  set(AMY_I2S_WS   29)
+  set(AMY_I2S_DOUT 26)
+  set(AMY_I2S_MCLK 30)
+  set(AMY_MCLK_MULTIPLE 128)
   # USB device identity (see the injection block below)
   set(USB_PRODUCT_NAME "Midori Tab5")
   set(USB_SERIAL_NUMBER "MIDORI-TAB5-001")
@@ -274,6 +301,17 @@ elseif(CONFIG_USB_MIDI_BOARD_ELECROW_CROWPANEL)
   set(PRIMARY_I2C_SDA_PIN 45)
   set(PRIMARY_I2C_SCL_PIN 46)
   set(PRIMARY_I2C_UNIT "ESP32_I2C1")
+  # AMY: I2S -> two NS4168 I2S amplifiers (L / R), no codec, no MCLK,
+  # standard (Philips) I2S. GPIO 30 switches the amplifiers' supply through
+  # a P-MOSFET (active low); that is board code in
+  # main/platform/board_audio.cpp. Pins from Elecrow's example and the V1.0
+  # schematic (docs/AMY_SYNTH.md).
+  set(HAS_AMY true)
+  set(AMY_I2S_BCLK 22)
+  set(AMY_I2S_WS   21)
+  set(AMY_I2S_DOUT 23)
+  set(AMY_I2S_MCLK -1)
+  set(AMY_MCLK_MULTIPLE 256)
   set(USB_PRODUCT_NAME "Midori CrowPanel")
   set(USB_SERIAL_NUMBER "MIDORI-CROWPANEL-001")
 elseif(CONFIG_USB_MIDI_BOARD_M5STACK_CORES3)
@@ -362,6 +400,26 @@ if(CONFIG_USB_MIDI_USB_MODE_MIDI_DEVICE)
     USB_MIDI_DEVICE_MANUFACTURER=\"Midori\"
     USB_MIDI_DEVICE_PRODUCT=\"${USB_PRODUCT_NAME}\"
     USB_MIDI_DEVICE_SERIAL=\"${USB_SERIAL_NUMBER}\"
+  )
+endif()
+
+# Configure picoruby-amy for this board. Like picoruby-usb_midi_device, the
+# gem knows no board: pins and the scheduling knobs come in as defines (see
+# mrbgems/picoruby-amy/include/amy_gem_config.h). Without them the gem's
+# port compiles to stubs.
+if(HAS_AMY)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    AMY_GEM_ENABLED=1
+    AMY_GEM_I2S_BCLK=${AMY_I2S_BCLK}
+    AMY_GEM_I2S_WS=${AMY_I2S_WS}
+    AMY_GEM_I2S_DOUT=${AMY_I2S_DOUT}
+    AMY_GEM_I2S_MCLK=${AMY_I2S_MCLK}
+    AMY_GEM_I2S_PHILIPS=1
+    AMY_GEM_MCLK_MULTIPLE=${AMY_MCLK_MULTIPLE}
+    # Core 0 above the UI loop (app_main, priority 1), away from the Ruby
+    # VM on core 1 -- see "タスクとコア配置" in docs/AMY_SYNTH.md.
+    AMY_GEM_TASK_CORE=0
+    AMY_GEM_TASK_PRIORITY=3
   )
 endif()
 

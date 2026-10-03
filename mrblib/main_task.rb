@@ -43,6 +43,9 @@ module BoardConfig
   # USB-MIDI Device support (for future implementation)
   HAS_USB_MIDI_DEVICE = true
 
+  # AMY software synthesizer on the board's speaker (picoruby-amy)
+  HAS_AMY = true
+
   # Primary I2C bus for accessories (e.g. DFRobot rotary encoders).
   # PRIMARY_I2C_UNIT names the underlying hardware bus, which varies by board.
   # A board without a dedicated I2C connector puts this on the SAM2695 UART
@@ -100,6 +103,17 @@ module MIDIDevices
     $midi_usb_midi_device
   end
 
+  # AMY software synthesizer on the board's speaker (Tab5 / CrowPanel).
+  # A MIDI transport like the others: MIDI::Device.new(MIDIDevices.amy).
+  def self.amy
+    # Lazy initialization
+    if $midi_amy.nil? && !$midi_amy_init_attempted
+      $midi_amy_init_attempted = true
+      init_amy
+    end
+    $midi_amy
+  end
+
   def self.init_sam2695
     if BoardConfig::HAS_SAM2695
       require 'sam2695'
@@ -130,7 +144,19 @@ module MIDIDevices
     end
   end
 
+  def self.init_amy
+    if BoardConfig::HAS_AMY
+      require 'amy'
+      $midi_amy = AMY::Synth.instance
+      puts "AMY synthesizer initialized"
+    else
+      puts "AMY not available on this board"
+    end
+  end
+
   def self.cleanup
+    $midi_amy = nil
+    $midi_amy_init_attempted = false
     $midi_sam2695 = nil
     $midi_usb_midi_host = nil
     $midi_usb_midi_device = nil

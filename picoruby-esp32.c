@@ -9,6 +9,9 @@
 #include "freertos/task.h"
 #include "picoruby.h"
 #include "picoruby-esp32.h"
+#include "midi.h"            // MIDI_TRANSPORT_USB_DEVICE (picoruby-midi)
+#include "midi_transport.h"  // MIDI_transport_send (picoruby-midi)
+#include "amy_gem.h"         // AMY_GEM_reset (picoruby-amy)
 
 static const char *TAG = "PICORUBY";
 
@@ -335,26 +338,31 @@ picoruby_esp32_midi_cleanup(void)
 {
   ESP_LOGI(TAG, "Performing MIDI cleanup...");
 
-  // Declare external functions
-  extern int USB_MIDI_HOST_send_packet(uint8_t cable, uint8_t cin, uint8_t midi1, uint8_t midi2, uint8_t midi3);
-  extern int UART_MIDI_send_packet(uint8_t cable, uint8_t cin, uint8_t midi1, uint8_t midi2, uint8_t midi3);
+  // Every registered transport except the USB-MIDI device port, which has
+  // never been part of the cleanup (the host PC on the other end is not
+  // ours to silence). That is the USB host and UART built-ins plus any
+  // transport gem that registered itself (e.g. the AMY synth).
+  const uint8_t mask = (uint8_t)~MIDI_TRANSPORT_USB_DEVICE;
 
   // Send cleanup messages to all MIDI channels (0-15)
   for (uint8_t ch = 0; ch < 16; ch++) {
     uint8_t status_cc = 0xB0 | ch;  // Control Change
 
     // All Sound Off (CC #120)
-    USB_MIDI_HOST_send_packet(0, 0x0B, status_cc, 120, 0);
-    UART_MIDI_send_packet(0, 0x0B, status_cc, 120, 0);
+    MIDI_transport_send(mask, 0, 0x0B, status_cc, 120, 0);
 
     // All Notes Off (CC #123)
-    USB_MIDI_HOST_send_packet(0, 0x0B, status_cc, 123, 0);
-    UART_MIDI_send_packet(0, 0x0B, status_cc, 123, 0);
+    MIDI_transport_send(mask, 0, 0x0B, status_cc, 123, 0);
   }
 
   // Send MIDI Stop (0xFC)
-  USB_MIDI_HOST_send_packet(0, 0x05, 0xFC, 0, 0);  // CIN 0x05 for single-byte system common
-  UART_MIDI_send_packet(0, 0x05, 0xFC, 0, 0);
+  MIDI_transport_send(mask, 0, 0x05, 0xFC, 0, 0);  // CIN 0x05 for single-byte system common
+
+  // The AMY synth keeps its state (synths, patches, CC mappings, effects)
+  // across scripts unless told otherwise, so the next script would start
+  // from whatever this one left. Its audio task keeps running. No-op when
+  // AMY is not running or not built in.
+  AMY_GEM_reset();
 
   ESP_LOGI(TAG, "MIDI cleanup completed");
 }
