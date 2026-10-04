@@ -147,7 +147,7 @@ module MIDIDevices
   def self.init_amy
     if BoardConfig::HAS_AMY
       require 'amy'
-      $midi_amy = AMY::Synth.instance
+      $midi_amy = AMY::Transport.instance
       puts "AMY synthesizer initialized"
     else
       puts "AMY not available on this board"
