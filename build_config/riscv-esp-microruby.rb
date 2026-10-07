@@ -6,59 +6,43 @@ MRuby::CrossBuild.new('esp32-microruby') do |conf|
   conf.archiver.command = 'riscv32-esp-elf-ar'
 
   conf.cc.host_command = 'gcc'
+  # ESP32-P4 uses RISC-V with single-precision float ABI
+  conf.cc.flags << '-march=rv32imafc_zicsr_zifencei'
+  conf.cc.flags << '-mabi=ilp32f'
   conf.cc.flags << '-Wall'
   conf.cc.flags << '-Wno-format'
   conf.cc.flags << '-Wno-unused-function'
   conf.cc.flags << '-Wno-maybe-uninitialized'
 
+  # Every define that changes the layout of mrb_state / mrb_value must also
+  # be passed to the IDF side (ADDITIONAL_DEFINITIONS in CMakeLists.txt).
   conf.cc.defines << 'MRB_TICK_UNIT=10'
   conf.cc.defines << 'MRB_TIMESLICE_TICK_COUNT=1'
-  conf.cc.defines << 'MRBC_CONVERT_CRLF=1'
   conf.cc.defines << 'MRB_INT64'
+  conf.cc.defines << 'MRB_NO_BOXING'
   conf.cc.defines << 'MRB_32BIT'
+  # picoruby-mruby adds this one itself, but only after its own sources (the
+  # mruby core) are set up, so the core would be built without it and the
+  # ext gems with it. Same as the upstream R2P2 configs.
+  conf.cc.defines << 'MRB_UTF8_STRING'
   conf.cc.defines << 'PICORB_ALLOC_ESTALLOC'
   conf.cc.defines << 'PICORB_ALLOC_ALIGN=8'
+  conf.cc.defines << 'MRBC_CONVERT_CRLF=1'
   conf.cc.defines << 'USE_FAT_FLASH_DISK'
-  conf.cc.defines << 'NDEBUG'
+  conf.cc.defines << 'USE_FAT_SD_DISK'
   conf.cc.defines << 'ESP32_PLATFORM'
+  conf.cc.defines << 'NDEBUG'
 
   if ENV['PICORUBY_DEBUG']
     conf.cc.defines << 'ESTALLOC_DEBUG'
     conf.enable_debug
   end
 
-  conf.microruby
-  conf.gembox 'minimum'
-  conf.gembox 'core'
+  conf.picoruby
 
-  conf.gem gemdir: '../picoruby/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-kernel-ext'
-  conf.gem gemdir: '../picoruby/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-string-ext'
-  conf.gem gemdir: '../picoruby/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-array-ext'
-  conf.gem gemdir: '../picoruby/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-objectspace'
-  conf.gem gemdir: '../picoruby/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-metaprog'
-  conf.gem gemdir: '../picoruby/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-error'
-  conf.gem gemdir: '../picoruby/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-sprintf'
-  conf.gem gemdir: '../picoruby/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-math'
+  eval File.read(File.expand_path('microruby_gems.rb', __dir__))
 
-  conf.gembox 'shell'
-
-  # stdlib
-  conf.gem core: 'picoruby-rng'
-  conf.gem core: 'picoruby-base64'
-  conf.gem core: 'picoruby-yaml'
-
-  # peripherals
-  conf.gem core: 'picoruby-gpio'
-  conf.gem core: 'picoruby-i2c'
-  conf.gem core: 'picoruby-spi'
-  conf.gem core: 'picoruby-adc'
-  conf.gem core: 'picoruby-uart'
-  conf.gem core: 'picoruby-pwm'
-
-  # others
-  conf.gem core: 'picoruby-esp32'
-  # conf.gem core: 'picoruby-rmt'
-  conf.gem core: 'picoruby-mbedtls'
-  conf.gem core: 'picoruby-socket'
-  # conf.gem core: 'picoruby-adafruit_sk6812'
+  # AMY software synthesizer — midori-specific gem. ESP32-P4 boards only
+  # (Tab5 / CrowPanel), so it is not in the xtensa (ESP32-S3) config.
+  conf.gem File.expand_path('../../../mrbgems/picoruby-amy', __dir__)
 end

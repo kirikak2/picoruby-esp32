@@ -1,4 +1,7 @@
-set(PICORB_VM "mrubyc" CACHE STRING "Select build mode (mrubyc or mruby)")
+# Ruby VM: "mruby" (default) or "mrubyc" (the original mruby/c build, kept
+# selectable). An existing build directory keeps the value it was configured
+# with; switch with `idf.py -DPICORB_VM=mruby reconfigure` (or fullclean).
+set(PICORB_VM "mruby" CACHE STRING "Select build mode (mrubyc or mruby)")
 message(STATUS "PICORB_VM is set to: ${PICORB_VM}")
 
 file(MAKE_DIRECTORY ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-mbedtls/lib/mbedtls/include)
@@ -8,15 +11,29 @@ if(${PICORB_VM} STREQUAL "mruby")
   set(MRUBY_CONFIG_STRING "${COMPONENT_DIR}/build_config/${IDF_TARGET_ARCH}-esp-microruby.rb")
   set(LIBMRUBY_PATH "esp32-microruby")
   set(CUSTOM_TARGET_NAME "microruby")
+  set(MRUBY_GEM_DIR ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-mruby)
   set(ADDITIONAL_INCLUDE_DIRS
     ${COMPONENT_DIR}/picoruby/build/esp32-microruby/include
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-mruby/lib/mruby/include
+    ${MRUBY_GEM_DIR}/include
+    ${MRUBY_GEM_DIR}/lib/mruby/include
+    ${MRUBY_GEM_DIR}/lib/mruby/mrbgems/mruby-task/include
   )
+  # These must match what libmruby.a was compiled with (build_config/
+  # *-esp-microruby.rb plus what picoruby-mruby's mrbgem.rake adds): several
+  # of them change the layout of mrb_state and mrb_value, and a mismatch
+  # corrupts memory silently instead of failing to link.
   set(ADDITIONAL_DEFINITIONS
+    -DPICORB_VM_MRUBY
     -DMRB_TICK_UNIT=10
     -DMRB_TIMESLICE_TICK_COUNT=1
-    -DMRB_INT64=1
-    -DPICORB_VM_MRUBY
+    -DMRB_INT64
+    -DMRB_NO_BOXING
+    -DMRB_32BIT
+    -DMRB_UTF8_STRING
+    -DMRB_USE_TASK_SCHEDULER
+    -DMRB_CONSTRAINED_BASELINE_PROFILE=1
+    -DPICORB_ALLOC_ESTALLOC
+    -DPICORB_ALLOC_ALIGN=8
   )
 else()
   file(MAKE_DIRECTORY ${COMPONENT_DIR}/picoruby/build/esp32/mrbgems)
@@ -25,6 +42,7 @@ else()
   set(CUSTOM_TARGET_NAME "picoruby")
   set(ADDITIONAL_INCLUDE_DIRS
     ${COMPONENT_DIR}/picoruby/build/esp32/mrbgems
+    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-mrubyc/lib/mrubyc/src
   )
   set(ADDITIONAL_DEFINITIONS
     -DMRBC_TICK_UNIT=10
@@ -91,7 +109,6 @@ idf_component_register(
   INCLUDE_DIRS
     ${COMPONENT_DIR}
     ${COMPONENT_DIR}/picoruby/include
-    ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-mrubyc/lib/mrubyc/src
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-machine/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-mbedtls/include
     ${COMPONENT_DIR}/picoruby/mrbgems/picoruby-mbedtls/lib/mbedtls/include
