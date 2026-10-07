@@ -34,6 +34,30 @@ extern picogems prebuilt_gems[];
 // Forward declaration for sandbox cleanup (added by selfbuild's
 // "Fix Illegal bytecode error after mrbc_cleanup()" patch)
 extern void mrbc_sandbox_cleanup(void);
+
+typedef mrbc_vm vm_state_t;
+
+#elif defined(PICORB_VM_MRUBY)
+#include "picoruby.h"
+#include "task.h"
+#include "task_hal.h"
+#include <mruby/class.h>
+#include <mruby/string.h>
+#include <mruby/array.h>
+#include <mruby/presym.h>
+
+typedef mrb_state vm_state_t;
+
+// Defined in picoruby-esp32.c; some gems reach the running VM through it.
+extern mrb_state *global_mrb;
+
+/*
+ * The VM the PicoRuby task is running, or NULL when there is none. The
+ * runner task clears it after closing the VM itself; still set at
+ * cleanup_vm() time means the task was deleted mid-run and its VM was
+ * never closed.
+ */
+static mrb_state *volatile s_mrb = NULL;
 #endif
 
 static const char *TAG = "SUPERVISOR";
@@ -83,8 +107,8 @@ static volatile bool s_ruby_script_requested = false;
 static void supervisor_task(void *arg);
 static void picoruby_runner_task(void *arg);
 static bool run_vm_with_main_task(void);
-static void register_script_manager_class(mrbc_vm *vm);
-static void register_console_io_class(mrbc_vm *vm);
+static void register_script_manager_class(vm_state_t *vm);
+static void register_console_io_class(vm_state_t *vm);
 
 // External declarations from picoruby-esp32.c
 extern void initialize_nvs(void);
@@ -99,6 +123,16 @@ extern void picoruby_esp32_midi_cleanup(void);
 #define HEAP_SIZE (1024 * 256)
 #else
 #define HEAP_SIZE (1024 * 180)
+#endif
+
+// C stack of the PicoRuby task. mruby's VM loop keeps far larger frames than
+// mruby/c's, and Kernel.load compiles the script (prism, recursive) on top of
+// whatever Ruby frames are already live, so it gets twice the mruby/c size.
+// (mruby's static .bss is ~22KB smaller than mruby/c's, which pays for it.)
+#if defined(PICORB_VM_MRUBY)
+#define PICORUBY_TASK_STACK_SIZE (32 * 1024)
+#else
+#define PICORUBY_TASK_STACK_SIZE (16 * 1024)
 #endif
 
 // Heap pool (declared in picoruby-esp32.c)
@@ -321,13 +355,42 @@ static bool build_error_message(const mrbc_vm *vm, char *buf, size_t bufsize)
 
     return true;
 }
+#elif defined(PICORB_VM_MRUBY)
+/**
+ * @brief Build error message from an exception object
+ * @param mrb     VM the exception belongs to (mrb->exc must be clear)
+ * @param exc     Exception object
+ * @param buf     Output buffer
+ * @param bufsize Buffer size
+ */
+static void build_error_message(mrb_state *mrb, mrb_value exc, char *buf, size_t bufsize)
+{
+    // "message (ExceptionClass)", with the location when mruby recorded it
+    mrb_value str = mrb_inspect(mrb, exc);
+    int offset = snprintf(buf, bufsize, "%s", RSTRING_CSTR(mrb, str));
+
+    // Add call stack (max 3 levels for UI display)
+    mrb_value bt = mrb_nil_value();
+    if (mrb_respond_to(mrb, exc, MRB_SYM(backtrace))) {
+        bt = mrb_funcall_id(mrb, exc, MRB_SYM(backtrace), 0);
+    }
+    if (mrb_array_p(bt)) {
+        for (mrb_int i = 0; i < 3 && i < RARRAY_LEN(bt); i++) {
+            int remaining = (int)bufsize - offset;
+            if (remaining <= 0) break;
+            mrb_value line = mrb_ary_ref(mrb, bt, i);
+            if (!mrb_string_p(line)) break;
+            offset += snprintf(buf + offset, remaining, "\n  %s", RSTRING_CSTR(mrb, line));
+        }
+    }
+}
 #endif
 
 /*
  * Delete the finished PicoRuby task.
  *
  * picoruby_runner_task() signals the supervisor and then suspends itself,
- * expecting to be deleted here; without this the 16KB stack of every task
+ * expecting to be deleted here; without this the stack of every task
  * we start would leak, which adds up quickly now that scripts can be
  * started and stopped from the UI.
  */
@@ -447,6 +510,31 @@ static void cleanup_vm(void)
     // Calling it here would crash because mrbc_cleanup() clears the memory allocator
 
     ESP_LOGI(TAG, "VM cleanup complete");
+#elif defined(PICORB_VM_MRUBY)
+    ESP_LOGI(TAG, "Cleaning up VM...");
+
+    if (s_mrb != NULL) {
+        // The PicoRuby task was deleted mid-run (it ignored the stop request),
+        // so its VM was never closed. It cannot be closed now either: the
+        // task may have been preempted halfway through updating an object
+        // or the heap. Abandon it instead -- the next
+        // mrb_open_with_custom_alloc() re-initialises the whole heap pool,
+        // the same reset mruby/c's mrbc_cleanup() does. Only state kept
+        // outside the pool needs dropping here: the tick timer's VM pointer,
+        // and (below) FatFs' volume table.
+        ESP_LOGW(TAG, "Abandoning a VM that was not closed");
+        mrb_hal_task_final(s_mrb);
+        s_mrb = NULL;
+        global_mrb = NULL;
+    }
+
+    // FatFs[] lives outside the VM heap but points at FATFS objects inside
+    // it. A closed VM has unmounted them already (FAT objects unmount when
+    // freed); an abandoned one has not, and the next f_mount() would write
+    // through the stale pointers (see docs/BUILTIN_METHOD_UAF.md).
+    { extern void ff_clear_volumes(void); ff_clear_volumes(); }
+
+    ESP_LOGI(TAG, "VM cleanup complete");
 #endif
 }
 
@@ -480,7 +568,7 @@ static void start_picoruby_task(const char *script_path)
     BaseType_t ret = xTaskCreatePinnedToCore(
         picoruby_runner_task,
         "picoruby",
-        16384,  // 16KB stack
+        PICORUBY_TASK_STACK_SIZE,
         NULL,
         3,      // Lower priority than supervisor
         &s_picoruby_task,
@@ -1040,7 +1128,213 @@ static void register_script_manager_class(mrbc_vm *vm)
     ESP_LOGI(TAG, "ScriptManager class registered");
 }
 
-#endif // PICORB_VM_MRUBYC
+#elif defined(PICORB_VM_MRUBY)
+
+// Same methods as the mruby/c block above; see there for what each is for.
+
+extern void picoruby_esp32_clear_script_list(void);
+extern bool picoruby_esp32_add_script(const char *filename);
+extern void picoruby_esp32_set_script_list_ready(bool ready);
+extern bool picoruby_esp32_stop_requested(void);
+
+static mrb_value c_sm_clear(mrb_state *mrb, mrb_value self)
+{
+    picoruby_esp32_clear_script_list();
+    return mrb_nil_value();
+}
+
+static mrb_value c_sm_add(mrb_state *mrb, mrb_value self)
+{
+    mrb_value name;
+    mrb_get_args(mrb, "o", &name);
+    if (!mrb_string_p(name)) {
+        return mrb_false_value();
+    }
+    return mrb_bool_value(picoruby_esp32_add_script(RSTRING_CSTR(mrb, name)));
+}
+
+static mrb_value c_sm_set_ready(mrb_state *mrb, mrb_value self)
+{
+    mrb_value ready = mrb_true_value();
+    mrb_get_args(mrb, "|o", &ready);
+    picoruby_esp32_set_script_list_ready(!mrb_false_p(ready));
+    return mrb_nil_value();
+}
+
+static mrb_value c_sm_get_requested(mrb_state *mrb, mrb_value self)
+{
+    extern volatile bool g_script_change_requested;
+    extern char g_requested_script[];
+    if (g_script_change_requested && g_requested_script[0] != '\0') {
+        ESP_LOGI(TAG, "get_requested returning: %s", g_requested_script);
+        return mrb_str_new_cstr(mrb, g_requested_script);
+    }
+    return mrb_nil_value();
+}
+
+static mrb_value c_sm_clear_request(mrb_state *mrb, mrb_value self)
+{
+    extern volatile bool g_script_change_requested;
+    extern volatile bool g_stop_requested;
+    extern char g_requested_script[];
+    ESP_LOGI(TAG, "clear_request called - clearing all stop flags");
+    g_script_change_requested = false;
+    g_stop_requested = false;
+    g_requested_script[0] = '\0';
+    return mrb_nil_value();
+}
+
+static mrb_value c_sm_stop_requested(mrb_state *mrb, mrb_value self)
+{
+    return mrb_bool_value(picoruby_esp32_stop_requested());
+}
+
+static mrb_value c_sm_check_console(mrb_state *mrb, mrb_value self)
+{
+    char script_path[128];
+    if (console_input_pop_command(script_path, sizeof(script_path))) {
+        return mrb_str_new_cstr(mrb, script_path);
+    }
+    return mrb_nil_value();
+}
+
+static mrb_value c_sm_modem_requested(mrb_state *mrb, mrb_value self)
+{
+    return mrb_bool_value(console_input_modem_pending());
+}
+
+static mrb_value c_sm_modem_end(mrb_state *mrb, mrb_value self)
+{
+    console_input_modem_exit();
+    return mrb_nil_value();
+}
+
+static mrb_value c_console_io_write(mrb_state *mrb, mrb_value self)
+{
+    mrb_value str;
+    mrb_get_args(mrb, "o", &str);
+    if (!mrb_string_p(str)) {
+        mrb_raise(mrb, E_TYPE_ERROR, "ConsoleIO#write expects a String");
+    }
+    int written = console_input_write_raw((const uint8_t *)RSTRING_PTR(str),
+                                          (size_t)RSTRING_LEN(str));
+    return mrb_fixnum_value(written);
+}
+
+static void register_console_io_class(mrb_state *mrb)
+{
+    struct RClass *cls = mrb_define_class(mrb, "ConsoleIO", mrb->object_class);
+    mrb_define_method(mrb, cls, "write", c_console_io_write, MRB_ARGS_REQ(1));
+}
+
+static mrb_value c_sm_cleanup_midi(mrb_state *mrb, mrb_value self)
+{
+    ESP_LOGI(TAG, "Ruby requested MIDI cleanup");
+    picoruby_esp32_midi_cleanup();
+    return mrb_nil_value();
+}
+
+static mrb_value c_sm_free_heap(mrb_state *mrb, mrb_value self)
+{
+    return mrb_fixnum_value((mrb_int)esp_get_free_heap_size());
+}
+
+static mrb_value c_sm_irb_requested(mrb_state *mrb, mrb_value self)
+{
+    return mrb_bool_value(is_irb_path(supervisor_get_requested_script()));
+}
+
+static mrb_value c_sm_irb_begin(mrb_state *mrb, mrb_value self)
+{
+    console_input_irb_enter();
+    return mrb_nil_value();
+}
+
+static mrb_value c_sm_irb_end(mrb_state *mrb, mrb_value self)
+{
+    console_input_irb_exit();
+    return mrb_nil_value();
+}
+
+static mrb_value c_sm_get_autorun_script(mrb_state *mrb, mrb_value self)
+{
+    const char *script = supervisor_get_requested_script();
+    // irb is not a file: main_task.rb reaches it through irb_requested?
+    if (is_irb_path(script)) {
+        return mrb_nil_value();
+    }
+    if (script && script[0] != '\0') {
+        ESP_LOGI(TAG, "get_autorun_script returning: %s", script);
+        return mrb_str_new_cstr(mrb, script);
+    }
+    return mrb_nil_value();
+}
+
+static mrb_value c_sm_request_script(mrb_state *mrb, mrb_value self)
+{
+    mrb_value path = mrb_nil_value();
+    mrb_get_args(mrb, "|o", &path);
+    supervisor_ruby_request_script(mrb_string_p(path) ? RSTRING_CSTR(mrb, path) : NULL);
+    return mrb_nil_value();
+}
+
+static mrb_value c_sm_sd_refresh_requested(mrb_state *mrb, mrb_value self)
+{
+    extern volatile bool g_sd_refresh_requested;
+    return mrb_bool_value(g_sd_refresh_requested);
+}
+
+static mrb_value c_sm_clear_sd_refresh(mrb_state *mrb, mrb_value self)
+{
+    extern volatile bool g_sd_refresh_requested;
+    g_sd_refresh_requested = false;
+    ESP_LOGI(TAG, "SD refresh request cleared");
+    return mrb_nil_value();
+}
+
+static mrb_value c_sm_add_log(mrb_state *mrb, mrb_value self)
+{
+    mrb_value str;
+    mrb_get_args(mrb, "o", &str);
+    if (!mrb_string_p(str)) {
+        return mrb_nil_value();
+    }
+    const char *text = RSTRING_CSTR(mrb, str);
+#if defined(CONFIG_USB_MIDI_UI_ENABLED)
+    extern void ui_add_log(const char *msg);
+    ui_add_log(text);
+#else
+    ESP_LOGI(TAG, "[Log] %s", text);
+#endif
+    return mrb_nil_value();
+}
+
+static void register_script_manager_class(mrb_state *mrb)
+{
+    struct RClass *cls = mrb_define_class(mrb, "ScriptManager", mrb->object_class);
+    mrb_define_method(mrb, cls, "clear", c_sm_clear, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "add", c_sm_add, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, cls, "set_ready", c_sm_set_ready, MRB_ARGS_OPT(1));
+    mrb_define_method(mrb, cls, "get_requested", c_sm_get_requested, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "clear_request", c_sm_clear_request, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "stop_requested?", c_sm_stop_requested, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "check_console", c_sm_check_console, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "modem_requested?", c_sm_modem_requested, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "modem_end", c_sm_modem_end, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "cleanup_midi", c_sm_cleanup_midi, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "free_heap", c_sm_free_heap, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "sd_refresh_requested?", c_sm_sd_refresh_requested, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "clear_sd_refresh", c_sm_clear_sd_refresh, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "add_log", c_sm_add_log, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, cls, "get_autorun_script", c_sm_get_autorun_script, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "request_script", c_sm_request_script, MRB_ARGS_OPT(1));
+    mrb_define_method(mrb, cls, "irb_requested?", c_sm_irb_requested, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "irb_begin", c_sm_irb_begin, MRB_ARGS_NONE());
+    mrb_define_method(mrb, cls, "irb_end", c_sm_irb_end, MRB_ARGS_NONE());
+    ESP_LOGI(TAG, "ScriptManager class registered");
+}
+
+#endif // PICORB_VM_MRUBYC / PICORB_VM_MRUBY
 
 static bool run_vm_with_main_task(void)
 {
@@ -1103,8 +1397,110 @@ static bool run_vm_with_main_task(void)
 
     ESP_LOGI(TAG, "main_task.rb completed (success=%d)", success);
     return success;
+#elif defined(PICORB_VM_MRUBY)
+    ESP_LOGI(TAG, "Initializing VM...");
+
+    // A fresh VM per run: mrb_open_with_custom_alloc() re-initialises the
+    // heap pool, so nothing of the previous script survives.
+    mrb_state *mrb = mrb_open_with_custom_alloc(heap_pool, HEAP_SIZE);
+    if (mrb == NULL) {
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+        snprintf(s_last_result.error_message, sizeof(s_last_result.error_message),
+                 "Failed to open mruby VM");
+        s_last_result.success = false;
+        xSemaphoreGive(s_state_mutex);
+        ESP_LOGE(TAG, "Failed to open mruby VM");
+        return false;
+    }
+    s_mrb = mrb;
+    global_mrb = mrb;
+
+    // mrb_open() runs every gem's initializer and mrblib. If one of them
+    // raises, mrb_open() stops there and still returns the VM, with the
+    // exception in mrb->exc and every later gem uninitialised -- running
+    // main_task.rb on that only produces confusing errors further down
+    // (a missing MIDI.start!, say). Report the real cause and give up.
+    if (mrb->exc) {
+        mrb_value exc = mrb_obj_value(mrb->exc);
+        mrb->exc = NULL;
+        char msg[200];
+        build_error_message(mrb, exc, msg, sizeof(msg));
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+        snprintf(s_last_result.error_message, sizeof(s_last_result.error_message),
+                 "Gem initialization failed: %s", msg);
+        s_last_result.success = false;
+        xSemaphoreGive(s_state_mutex);
+        ESP_LOGE(TAG, "Gem initialization failed: %s", msg);
+        mrb_close(mrb);
+        global_mrb = NULL;
+        s_mrb = NULL;
+        return false;
+    }
+
+    // Gems are initialised by mrb_open(), so require has nothing to set up.
+    register_script_manager_class(mrb);
+    register_console_io_class(mrb);
+
+    bool success = true;
+    mrb_value exc = mrb_nil_value();
+
+    mrc_ccontext *cc = mrc_ccontext_new(mrb);
+    mrc_irep *irep = mrb_read_irep(mrb, main_task);
+    mrb_value name = mrb_str_new_lit(mrb, "main_task");
+    mrb_value task = mrb_nil_value();
+    if (irep != NULL) {
+        task = mrc_create_task(cc, irep, name, mrb_nil_value(), mrb_obj_value(mrb->top_self));
+    }
+    if (mrb_nil_p(task)) {
+        ESP_LOGE(TAG, "Failed to create main_task");
+        success = false;
+    } else {
+        // Run the VM (this blocks until all tasks complete)
+        mrb_task_run(mrb);
+
+        // An exception that escaped main_task.rb is left in mrb->exc, or
+        // kept as the task's result value.
+        if (mrb->exc) {
+            exc = mrb_obj_value(mrb->exc);
+        } else {
+            mrb_value result = mrb_task_value(mrb, task);
+            if (mrb_obj_is_kind_of(mrb, result, E_EXCEPTION)) {
+                exc = result;
+            }
+        }
+    }
+    mrc_ccontext_free(cc);
+
+    if (!mrb_nil_p(exc)) {
+        success = false;
+        mrb->exc = NULL;  // inspect/backtrace below run Ruby code
+
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+        build_error_message(mrb, exc, s_last_result.error_message,
+                            sizeof(s_last_result.error_message));
+        s_last_result.success = false;
+        xSemaphoreGive(s_state_mutex);
+
+        ESP_LOGE(TAG, "Script error: %s", s_last_result.error_message);
+    } else if (!success) {
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+        snprintf(s_last_result.error_message, sizeof(s_last_result.error_message),
+                 "Failed to create main_task");
+        s_last_result.success = false;
+        xSemaphoreGive(s_state_mutex);
+    }
+
+    // Close the VM here, on its own task. Gem finalizers run and objects are
+    // freed (FAT volumes unmount themselves); the tick timer lets go of it in
+    // mrb_hal_task_final().
+    mrb_close(mrb);
+    global_mrb = NULL;
+    s_mrb = NULL;
+
+    ESP_LOGI(TAG, "main_task.rb completed (success=%d)", success);
+    return success;
 #else
-    ESP_LOGW(TAG, "mruby VM not supported in supervisor mode");
+    ESP_LOGW(TAG, "No Ruby VM selected");
     return false;
 #endif
 }

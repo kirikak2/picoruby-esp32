@@ -463,7 +463,7 @@ if sm.irb_requested?
 
   puts "irb Mode"
 
-  # VFS state may be cleared by mrbc_cleanup(), check and re-init if needed
+  # Each script gets a fresh VM, so VFS starts empty: check and re-init if needed
   $sd_available = VFS.volume_index("/sd") ? true : false
   if !$sd_available && BoardConfig::SD_MODE != "none"
     puts "SD card not mounted, re-initializing..."
@@ -485,7 +485,7 @@ elsif script_to_run
 
   puts "Script Mode: #{script_to_run}"
 
-  # VFS state may be cleared by mrbc_cleanup(), check and re-init if needed
+  # Each script gets a fresh VM, so VFS starts empty: check and re-init if needed
   $sd_available = VFS.volume_index("/sd") ? true : false
   if !$sd_available && BoardConfig::SD_MODE != "none"
     puts "SD card not mounted, re-initializing..."

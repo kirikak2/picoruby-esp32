@@ -112,16 +112,17 @@ picoruby_esp32(void)
   mrb_value task = mrc_create_task(cc, irep, name, mrb_nil_value(), mrb_obj_value(mrb->top_self));
   if (mrb_nil_p(task)) {
     const char *msg = "mrbc_create_task failed\n";
-    hal_write(1, msg, strlen(msg));
+    picorb_hal_write(1, msg, strlen(msg));
   }
   else {
-    mrb_tasks_run(mrb);
+    mrb_task_run(mrb);
   }
   if (mrb->exc) {
     mrb_print_error(mrb);
   }
-  mrb_close(mrb);
+  // cc is allocated from the VM's heap: free it before closing the VM
   mrc_ccontext_free(cc);
+  mrb_close(mrb);
 #endif
 }
 
@@ -264,7 +265,7 @@ picoruby_esp32_run_script(const char *script, size_t script_len, const char *fil
     return false;
   }
 
-  mrb_tasks_run(global_mrb);
+  mrb_task_run(global_mrb);
 
   bool success = true;
   if (global_mrb->exc) {
